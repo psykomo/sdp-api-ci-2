@@ -41,6 +41,7 @@ class RbacSeeder extends Seeder
             ['key' => 'inmate.read', 'name' => 'Read inmates'],
             ['key' => 'inmate.write', 'name' => 'Create/update inmates'],
             ['key' => 'inmate.delete', 'name' => 'Delete inmates'],
+            ['key' => 'inmate.release', 'name' => 'Release inmates'],
             ['key' => 'user.read', 'name' => 'Read users'],
             ['key' => 'user.write', 'name' => 'Create/update users'],
             ['key' => 'user.delete', 'name' => 'Delete users'],
@@ -67,7 +68,7 @@ class RbacSeeder extends Seeder
                 'permission_id' => (int) $permId,
             ];
         }
-        foreach (['inmate.read', 'inmate.write', 'user.read'] as $key) {
+        foreach (['inmate.read', 'inmate.write', 'inmate.release', 'user.read'] as $key) {
             $assignments[] = [
                 'role_id'       => (int) $rolesByKey['operator'],
                 'permission_id' => (int) $permsByKey[$key],

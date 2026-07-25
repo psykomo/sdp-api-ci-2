@@ -2,30 +2,52 @@
 
 namespace App\Modules\Inmate\Services;
 
-use App\Models\AuditLogModel;
+use App\Modules\Inmate\Actions\RegisterInmate;
+use App\Modules\Inmate\Shared\InmateAuditWriter;
+use App\Modules\Inmate\Shared\InmateFinder;
 use App\Modules\Inmate\Models\InmateModel;
 use App\Services\OrgContext;
 use App\Services\UnitOfWork;
-use CodeIgniter\Exceptions\PageNotFoundException;
+use DomainException;
 use RuntimeException;
 
 /**
- * Inmate business logic — always scoped by OrgContext.
+ * Facade / composition root for the Inmate module.
  *
- * Multi-write business processes use UnitOfWork. When called alone they own
- * the transaction; when called from TransferService (or any outer UnitOfWork)
- * they join that larger atomic boundary.
+ * As the module grows to hundreds of processes, this class does NOT grow with
+ * it. Reads delegate to InmateQueryService, each write use-case lives in its
+ * own Action (e.g. RegisterInmate, ReleaseInmate). This facade only exists to
+ * give callers (controllers, other modules) one stable entry point and to
+ * share a single InmateModel instance so validation errors() stay accessible.
  */
 class InmateService
 {
+    protected InmateModel $inmates;
+
+    protected OrgContext $orgContext;
+
+    protected UnitOfWork $unitOfWork;
+
+    protected InmateQueryService $query;
+
+    protected InmateFinder $finder;
+
+    protected RegisterInmate $register;
+
+    protected InmateAuditWriter $auditWriter;
+
     public function __construct(
-        protected InmateModel $inmates = new InmateModel(),
-        protected ?OrgContext $orgContext = null,
-        protected AuditLogModel $audit = new AuditLogModel(),
-        protected ?UnitOfWork $unitOfWork = null,
+        ?InmateModel $inmates = null,
+        ?OrgContext $orgContext = null,
+        ?UnitOfWork $unitOfWork = null,
     ) {
-        $this->orgContext ??= service('orgContext');
-        $this->unitOfWork ??= service('unitOfWork');
+        $this->inmates     = $inmates ?? new InmateModel();
+        $this->orgContext  = $orgContext ?? service('orgContext');
+        $this->unitOfWork  = $unitOfWork ?? service('unitOfWork');
+        $this->finder      = new InmateFinder($this->inmates, $this->orgContext);
+        $this->auditWriter = new InmateAuditWriter(orgContext: $this->orgContext);
+        $this->query       = new InmateQueryService($this->inmates, $this->orgContext, $this->finder);
+        $this->register    = new RegisterInmate($this->inmates, $this->auditWriter, $this->orgContext, $this->unitOfWork);
     }
 
     /**
@@ -33,99 +55,32 @@ class InmateService
      */
     public function list(int $perPage = 10, ?string $search = null): array
     {
-        $scoped = $this->orgContext->getScopedOrgIds();
-        if ($scoped === []) {
-            return [
-                'items' => [],
-                'meta'  => ['page' => 1, 'perPage' => $perPage, 'total' => 0, 'pageCount' => 0],
-            ];
-        }
-
-        $builder = $this->inmates->whereIn('organization_id', $scoped);
-
-        if ($search) {
-            $builder = $builder->groupStart()
-                ->like('full_name', $search)
-                ->orLike('registration_number', $search)
-                ->orLike('alias_name', $search)
-                ->groupEnd();
-        }
-
-        $items = $builder->paginate($perPage, 'inmates');
-        $pager = $this->inmates->pager;
-
-        return [
-            'items' => $items,
-            'meta'  => [
-                'page'      => $pager->getCurrentPage('inmates'),
-                'perPage'   => $perPage,
-                'total'     => $pager->getTotal('inmates'),
-                'pageCount' => $pager->getPageCount('inmates'),
-            ],
-        ];
+        return $this->query->list($perPage, $search);
     }
 
     public function findOrFail(int|string $id): object
     {
-        $inmate = $this->inmates->find($id);
-
-        if ($inmate === null || ! $this->isInScope((int) $inmate->organization_id)) {
-            throw PageNotFoundException::forPageNotFound("Inmate with ID {$id} not found.");
-        }
-
-        return $inmate;
+        return $this->query->findOrFail($id);
     }
 
     /**
-     * Module-local multi-write process (insert + audit).
+     * Register a new inmate — delegates to the RegisterInmate action.
      *
-     * Safe to call alone or from a larger UnitOfWork.
+     * Kept returning object|false so the existing controller contract holds.
      *
      * @param array<string, mixed> $data
-     * @return object|false
      */
     public function create(array $data): object|false
     {
-        $activeOrgId = $this->orgContext->getActiveOrgId();
-        if ($activeOrgId === null) {
-            return false;
-        }
-
-        $data['organization_id'] = $activeOrgId;
-        $data['status'] ??= 'active';
-
         try {
-            return $this->unitOfWork->run(function () use ($data, $activeOrgId): object {
-                $id = $this->inmates->insert($data);
-                if ($id === false) {
-                    throw new RuntimeException(
-                        'Unable to create inmate: ' . implode(' ', $this->inmates->errors()),
-                    );
-                }
-
-                $inmate = $this->inmates->find($id);
-                if ($inmate === null) {
-                    throw new RuntimeException('Created inmate could not be reloaded.');
-                }
-
-                $this->audit->record(
-                    'inmate.created',
-                    $this->orgContext->getUserId(),
-                    $activeOrgId,
-                    'inmate',
-                    (int) $id,
-                );
-
-                return $inmate;
-            });
-        } catch (RuntimeException) {
+            return $this->register->execute($data);
+        } catch (DomainException | RuntimeException) {
             return false;
         }
     }
 
     /**
      * @param array<string, mixed> $data
-     * @return object|false
      */
     public function update(int|string $id, array $data): object|false
     {
@@ -141,13 +96,7 @@ class InmateService
                     );
                 }
 
-                $this->audit->record(
-                    'inmate.updated',
-                    $this->orgContext->getUserId(),
-                    $this->orgContext->getActiveOrgId(),
-                    'inmate',
-                    (int) $id,
-                );
+                $this->auditWriter->record('inmate.updated', (int) $id);
 
                 $inmate = $this->inmates->find($id);
                 if ($inmate === null) {
@@ -167,14 +116,7 @@ class InmateService
 
         $this->unitOfWork->run(function () use ($id): void {
             $this->inmates->delete($id);
-
-            $this->audit->record(
-                'inmate.deleted',
-                $this->orgContext->getUserId(),
-                $this->orgContext->getActiveOrgId(),
-                'inmate',
-                (int) $id,
-            );
+            $this->auditWriter->record('inmate.deleted', (int) $id);
         });
     }
 
@@ -199,7 +141,6 @@ class InmateService
             }
 
             $inmate = $this->inmates->find($id);
-
             if ($inmate === null) {
                 throw new RuntimeException('Transferred inmate could not be reloaded.');
             }
@@ -214,10 +155,5 @@ class InmateService
     public function errors(): array
     {
         return $this->inmates->errors();
-    }
-
-    private function isInScope(int $organizationId): bool
-    {
-        return in_array($organizationId, $this->orgContext->getScopedOrgIds(), true);
     }
 }

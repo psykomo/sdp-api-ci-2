@@ -63,6 +63,55 @@ Do **not** put business rules or org filters in controllers.
    `php spark migrate -n App\\Modules\\{Name}`
 5. Mirror the Inmate pattern: `*Service` injects `service('orgContext')` and scopes every query.
 
+## Module internals (scaling to many processes)
+
+A small module can live in one `*Service`. As it grows to dozens/hundreds of
+business processes, split it so the facade never becomes a god class. The Inmate
+module is the reference:
+
+```
+Controllers/Api/     # one controller per process family (thin HTTP only)
+Services/
+  {Name}Service.php       # FACADE / composition root — the module's public surface
+  {Name}QueryService.php  # all READS (list/search/find); no UnitOfWork
+Actions/             # one class == one WRITE business process, single execute()
+Shared/              # helpers reused by every process (finder, audit writer, ...)
+Models/ + Entities/
+Database/Migrations/
+Config/Routes.php
+```
+
+Guidelines:
+
+- **One process = one Action.** Business rules live in the Action, not the
+  controller or model. Wrap every multi-write Action in `UnitOfWork`.
+- **Reads stay in the query service**, separate from writes.
+- **Shared helpers** hold rules that would otherwise be copy-pasted (e.g.
+  `InmateFinder` is the single source of "is this inmate in my scope?").
+- **The facade only delegates** — it exists to give callers one stable entry
+  point and to share a single Model instance (so `errors()` stays accessible).
+
+## Module dependency rules
+
+Actions and services **may** call another module — that is how cross-module
+use cases work (e.g. `Transfer` → `Inmate`). Keep it disciplined:
+
+1. **Depend on the facade, never the internals.** Inject the other module's
+   `*Service` (its public surface). Never reach into another module's
+   `Models/`, `Entities/`, or `Actions/` directly.
+2. **Dependencies flow one way — no cycles.** `Transfer → Inmate` is allowed;
+   `Inmate → Transfer` on top of it creates `Inmate ⇄ Transfer` (constructor
+   recursion, untestable). Rough layering:
+   `MasterData → Inmate → {Visit, Medical, Legal, Remission} → Transfer/Report`.
+   A module never calls back into a module that already depends on it.
+3. **Atomicity is automatic.** A cross-module call inside a `UnitOfWork` joins
+   the outer transaction (see below); no extra work to stay atomic.
+4. **Coordinating 3+ modules ⇒ it's an orchestrator, not an Action.** One
+   outbound call (e.g. `ReleaseInmate` asking Legal to verify no pending case)
+   is fine. When a process must coordinate several modules, promote it to its
+   own module that calls down into all of them — the way `Transfer` does —
+   so no domain module silently becomes the hub everyone depends on.
+
 ## Auth tokens
 
 `AuthService` issues opaque Bearer tokens stored as SHA-256 hashes in `api_tokens`. Swap the internals for JWT/Shield/SSO later without changing filters.

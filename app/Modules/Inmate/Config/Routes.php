@@ -26,4 +26,9 @@ $routes->group('api/v1', ['filter' => ['apiAuth', 'orgScope']], static function 
     $routes->delete('inmates/(:num)', '\App\Modules\Inmate\Controllers\Api\Inmates::delete/$1', [
         'filter' => 'permission:inmate.delete',
     ]);
+
+    // Business process: release (pembebasan). Own controller + permission.
+    $routes->post('inmates/(:num)/releases', '\App\Modules\Inmate\Controllers\Api\InmateReleases::create/$1', [
+        'filter' => 'permission:inmate.release',
+    ]);
 });
