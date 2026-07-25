@@ -14,6 +14,9 @@ use Throwable;
  * - If already inside a transaction (outer UnitOfWork / CI4 transBegin),
  *   this joins that outer transaction and neither commits nor rolls back.
  *
+ * The connection is resolved lazily via db_connect() so ConnectionResolver
+ * can switch the default group (multi topology) before work begins.
+ *
  * Modules may therefore wrap their own business processes with UnitOfWork
  * and still be called safely from a larger cross-module UnitOfWork.
  */
@@ -22,7 +25,14 @@ class UnitOfWork
     public function __construct(
         protected ?BaseConnection $db = null,
     ) {
-        $this->db ??= db_connect();
+    }
+
+    /**
+     * Always the current default connection (respects ConnectionResolver).
+     */
+    protected function connection(): BaseConnection
+    {
+        return $this->db ?? db_connect();
     }
 
     /**
@@ -30,7 +40,7 @@ class UnitOfWork
      */
     public function isActive(): bool
     {
-        return $this->db->transDepth > 0;
+        return $this->connection()->transDepth > 0;
     }
 
     /**
@@ -43,20 +53,21 @@ class UnitOfWork
      */
     public function run(callable $operation): mixed
     {
-        $ownsTransaction = ! $this->isActive();
+        $db              = $this->connection();
+        $ownsTransaction = $db->transDepth === 0;
 
-        if ($ownsTransaction && ! $this->db->transBegin()) {
+        if ($ownsTransaction && ! $db->transBegin()) {
             throw new RuntimeException('Unable to begin database transaction.');
         }
 
         try {
-            $result = $operation($this->db);
+            $result = $operation($db);
 
-            if ($this->db->transStatus() === false) {
+            if ($db->transStatus() === false) {
                 throw new RuntimeException('Database transaction was marked as failed.');
             }
 
-            if ($ownsTransaction && ! $this->db->transCommit()) {
+            if ($ownsTransaction && ! $db->transCommit()) {
                 throw new RuntimeException('Unable to commit database transaction.');
             }
 
@@ -65,7 +76,7 @@ class UnitOfWork
             // Only the owner of the outermost boundary issues SQL ROLLBACK.
             // Nested callers rethrow so the outer UnitOfWork can abort everything.
             if ($ownsTransaction) {
-                $this->db->transRollback();
+                $db->transRollback();
             }
 
             throw $exception;

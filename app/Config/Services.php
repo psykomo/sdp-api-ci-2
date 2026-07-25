@@ -67,6 +67,15 @@ class Services extends BaseService
         return new \App\Services\UnitOfWork();
     }
 
+    public static function connectionResolver(bool $getShared = true): \App\Services\ConnectionResolver
+    {
+        if ($getShared) {
+            return static::getSharedInstance('connectionResolver');
+        }
+
+        return new \App\Services\ConnectionResolver();
+    }
+
     public static function inmateService(bool $getShared = true): \App\Modules\Inmate\Services\InmateService
     {
         if ($getShared) {

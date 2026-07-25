@@ -24,6 +24,26 @@ class Database extends Config
     public string $defaultGroup = 'default';
 
     /**
+     * Deployment topology:
+     * - single: one shared database; org isolation via organization_id
+     * - multi:  one database/schema per organization code (identical schema)
+     *
+     * Override via .env: database.topology = single|multi
+     */
+    public string $topology = 'single';
+
+    /**
+     * Multi-topology only: organization code → MariaDB database name
+     * (or SQLite filename stem when the active driver is SQLite3).
+     *
+     * Populated from .env keys `database.tenants.{ORG_CODE}=db_name`
+     * because CI4 env injection cannot add new keys to an empty array.
+     *
+     * @var array<string, string>
+     */
+    public array $tenants = [];
+
+    /**
      * Local SQLite3 connection (development default).
      *
      * @var array<string, mixed>
@@ -165,6 +185,11 @@ class Database extends Config
     {
         parent::__construct();
 
+        $this->loadTenantsFromEnv();
+
+        $topology = strtolower(trim($this->topology));
+        $this->topology = in_array($topology, ['single', 'multi'], true) ? $topology : 'single';
+
         if (ENVIRONMENT === 'testing') {
             $this->defaultGroup = 'tests';
 
@@ -173,6 +198,30 @@ class Database extends Config
 
         if (ENVIRONMENT === 'production') {
             $this->defaultGroup = 'mariadb';
+        }
+    }
+
+    /**
+     * Read `database.tenants.LP-CIPINANG=lp_cipinang` style env entries into $tenants.
+     */
+    private function loadTenantsFromEnv(): void
+    {
+        $prefix = 'database.tenants.';
+        $sources = [$_ENV, $_SERVER];
+
+        foreach ($sources as $source) {
+            foreach ($source as $key => $value) {
+                if (! is_string($key) || ! str_starts_with($key, $prefix)) {
+                    continue;
+                }
+
+                $code = strtoupper(substr($key, strlen($prefix)));
+                if ($code === '' || ! is_scalar($value)) {
+                    continue;
+                }
+
+                $this->tenants[$code] = trim((string) $value, " \t\n\r\0\x0B'\"");
+            }
         }
     }
 }

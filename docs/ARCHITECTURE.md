@@ -35,7 +35,8 @@ Client
 ### Required headers (protected routes)
 
 - `Authorization: Bearer <token>`
-- `X-Org-Id: <organization_id>` — must be one of the user’s assigned orgs
+- `X-Org-Id: <organization_id>` — must be one of the user’s assigned orgs (**single** topology)
+- `X-Org-Code: <organization_code>` — routes the tenant database (**multi** topology; optional `X-Org-Id` must match the local row)
 - `Accept: application/json`
 
 ### Org scoping rules
@@ -118,6 +119,10 @@ use cases work (e.g. `Transfer` → `Inmate`). Keep it disciplined:
 
 Login: `POST /api/v1/auth/login` with `{ "email", "password" }` (public).
 
+In **multi** topology also send `organization_code` (e.g. `LP-CIPINANG`) so the
+token is issued against that unit’s isolated database. Protected requests then
+send `X-Org-Code` (and optionally `X-Org-Id` for the local id inside that DB).
+
 ## Core schema
 
 - `organizations` — `kanwil` | `lapas` | `rutan`, optional `parent_id`
@@ -163,6 +168,73 @@ Optional fallbacks:
 
 - `db_connect('sqlite')` — local file even in production tooling
 - `db_connect('mariadb')` — MariaDB explicitly in any environment
+
+## Database topology (single vs per-unit DB)
+
+One codebase supports two deployments. Switch with `database.topology`.
+
+| Mode | Config | Behavior |
+|------|--------|----------|
+| `single` (default) | one shared DB | All orgs in one database. Isolation via `organization_id` + `OrgContext` (current design). |
+| `multi` | one DB/schema per org code | Identical schema in every database (`lp_cipinang`, `rt_salemba`, `kw_dki`, …). Each request binds to **exactly one** DB. |
+
+Topology **C** (fully isolated): every unit DB includes auth + domain tables.
+Kanwil/Pusat also has its own DB with the **same** structure. An **external**
+process aggregates unit data into the Kanwil/Pusat database — this API never
+fans out across unit databases.
+
+```text
+Client
+  → X-Org-Code: LP-CIPINANG   (multi only; routes the DB)
+  → ConnectionResolver.activateForOrgCode()
+  → ApiAuth (token in that DB's api_tokens)
+  → OrgScope (resolve local organizations.id by code)
+  → Controller / Service / Model   (all on that one connection)
+```
+
+### Config
+
+```env
+database.topology = single   # or multi
+
+# multi only — org code → MariaDB database name
+# (SQLite local: value becomes writable/db/{value}.sqlite)
+database.tenants.LP-CIPINANG = lp_cipinang
+database.tenants.RT-SALEMBA  = rt_salemba
+database.tenants.KW-DKI      = kw_dki
+```
+
+Routing key is organization **`code`**, not numeric `id` — each isolated DB can
+use its own auto-increment ids (Cipinang and Salemba may both be local `id = 1`).
+
+### Headers / login
+
+| Topology | Login body | Protected headers |
+|----------|------------|-------------------|
+| `single` | `email`, `password` | `Authorization`, `X-Org-Id` |
+| `multi`  | `email`, `password`, `organization_code` | `Authorization`, `X-Org-Code` (optional `X-Org-Id` must match) |
+
+`ConnectionResolver` is registered as `service('connectionResolver')`.
+`UnitOfWork` resolves `db_connect()` lazily so it always uses the active tenant.
+
+### Migrations
+
+```bash
+# single
+php spark migrate --all
+
+# multi — every mapped tenant DB
+php spark migrate:tenants
+php spark migrate:tenants --seed   # also RbacSeeder + DemoAuthSeeder per tenant
+```
+
+### Transfer limitation in `multi`
+
+Same-DB transfers (e.g. two orgs mirrored inside a Kanwil DB) still use
+`UnitOfWork`. Cross-unit moves between two tenant databases (Cipinang DB →
+Salemba DB) are **out of scope for this API** under topology C — treat them as
+an external/ops process. Do not assume a single ACID transaction across MariaDB
+databases.
 
 ## Atomic cross-module operations
 

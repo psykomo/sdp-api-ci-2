@@ -38,6 +38,12 @@
 # database.default.DBPrefix =
 # database.default.port = 3306
 
+# Topology: single (one shared DB) | multi (one DB/schema per org code)
+# database.topology = single
+# database.tenants.LP-CIPINANG = lp_cipinang
+# database.tenants.RT-SALEMBA  = rt_salemba
+# database.tenants.KW-DKI      = kw_dki
+
 # If you use MySQLi as tests, first update the values of Config\Database::$tests.
 # database.tests.hostname = localhost
 # database.tests.database = ci4_test

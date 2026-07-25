@@ -4,10 +4,15 @@ namespace App\Controllers\Api;
 
 use App\Libraries\ApiResponse;
 use App\Services\AuthService;
+use App\Services\ConnectionResolver;
 use CodeIgniter\RESTful\ResourceController;
+use InvalidArgumentException;
 
 /**
  * Auth endpoints (public). Issues Bearer API tokens.
+ *
+ * In multi topology, login requires organization_code so the token is
+ * issued against that unit's isolated database.
  */
 class Auth extends ResourceController
 {
@@ -27,7 +32,27 @@ class Auth extends ResourceController
             );
         }
 
-        $userModel = model(\App\Models\UserModel::class);
+        /** @var ConnectionResolver $resolver */
+        $resolver = service('connectionResolver');
+        $orgCode  = strtoupper(trim((string) ($data['organization_code'] ?? '')));
+
+        if ($resolver->isMulti()) {
+            if ($orgCode === '') {
+                return $this->respond(
+                    ApiResponse::error('organization_code is required in multi database topology.', 422),
+                    422,
+                );
+            }
+
+            try {
+                $resolver->activateForOrgCode($orgCode);
+            } catch (InvalidArgumentException $e) {
+                return $this->respond(ApiResponse::error($e->getMessage(), 400), 400);
+            }
+        }
+
+        // Bind to the (possibly just-activated) default connection.
+        $userModel = model(\App\Models\UserModel::class, false);
         $user      = $userModel->where('email', strtolower($email))->first();
 
         if ($user === null) {
@@ -46,17 +71,23 @@ class Auth extends ResourceController
         }
 
         /** @var AuthService $auth */
-        $auth  = service('authService');
+        $auth  = service('authService', false);
         $token = $auth->issueToken((int) $userData['id']);
 
         unset($userData['password_hash']);
 
-        return $this->respond(ApiResponse::success([
+        $payload = [
             'token'      => $token['token'],
             'expires_at' => $token['expires_at'],
             'token_type' => 'Bearer',
             'user'       => $userData,
-        ], 'Authenticated'));
+        ];
+
+        if ($resolver->isMulti()) {
+            $payload['organization_code'] = $orgCode;
+        }
+
+        return $this->respond(ApiResponse::success($payload, 'Authenticated'));
     }
 
     /**
