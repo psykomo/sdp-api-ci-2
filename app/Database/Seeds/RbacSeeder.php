@@ -24,7 +24,7 @@ class RbacSeeder extends Seeder
             [
                 'key'         => 'operator',
                 'name'        => 'Operator',
-                'description' => 'Day-to-day inmate operations',
+                'description' => 'Day-to-day WBP operations',
                 'created_at'  => $now,
                 'updated_at'  => $now,
             ],
@@ -38,14 +38,14 @@ class RbacSeeder extends Seeder
         ]);
 
         $permissions = [
-            ['key' => 'inmate.read', 'name' => 'Read inmates'],
-            ['key' => 'inmate.write', 'name' => 'Create/update inmates'],
-            ['key' => 'inmate.delete', 'name' => 'Delete inmates'],
-            ['key' => 'inmate.release', 'name' => 'Release inmates'],
-            ['key' => 'inmate.transfer', 'name' => 'Transfer inmates between units'],
-            ['key' => 'visit.read', 'name' => 'Read visits'],
-            ['key' => 'visit.write', 'name' => 'Create/update visits'],
-            ['key' => 'visit.delete', 'name' => 'Delete visits'],
+            ['key' => 'wbp.read', 'name' => 'Read WBP'],
+            ['key' => 'wbp.write', 'name' => 'Create/update WBP'],
+            ['key' => 'wbp.delete', 'name' => 'Delete WBP'],
+            ['key' => 'wbp.release', 'name' => 'Release WBP (pembebasan)'],
+            ['key' => 'wbp.mutasi', 'name' => 'Mutasi WBP between units'],
+            ['key' => 'kunjungan.read', 'name' => 'Read kunjungan'],
+            ['key' => 'kunjungan.write', 'name' => 'Create/update kunjungan'],
+            ['key' => 'kunjungan.delete', 'name' => 'Delete kunjungan'],
             ['key' => 'user.read', 'name' => 'Read users'],
             ['key' => 'user.write', 'name' => 'Create/update users'],
             ['key' => 'user.delete', 'name' => 'Delete users'],
@@ -73,8 +73,8 @@ class RbacSeeder extends Seeder
             ];
         }
         foreach ([
-            'inmate.read', 'inmate.write', 'inmate.release', 'inmate.transfer',
-            'visit.read', 'visit.write',
+            'wbp.read', 'wbp.write', 'wbp.release', 'wbp.mutasi',
+            'kunjungan.read', 'kunjungan.write',
             'user.read',
         ] as $key) {
             $assignments[] = [
@@ -82,7 +82,7 @@ class RbacSeeder extends Seeder
                 'permission_id' => (int) $permsByKey[$key],
             ];
         }
-        foreach (['inmate.read', 'visit.read', 'user.read'] as $key) {
+        foreach (['wbp.read', 'kunjungan.read', 'user.read'] as $key) {
             $assignments[] = [
                 'role_id'       => (int) $rolesByKey['viewer'],
                 'permission_id' => (int) $permsByKey[$key],

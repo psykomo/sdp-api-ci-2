@@ -1,6 +1,9 @@
 # IMS API Architecture
 
-Inmate Management System (SDP) API — CodeIgniter 4, **hybrid + multi-org**.
+Sistem Database Pemasyarakatan (SDP) API — CodeIgniter 4, **hybrid + multi-org**.
+
+**Domain modules use Indonesian names** (e.g. `Wbp`, `Kunjungan`, `Remisi`).  
+Canonical map: [`docs/MODULE_NAMING.md`](./MODULE_NAMING.md).
 
 ## House style (pragmatic modular API)
 
@@ -9,8 +12,9 @@ stays simple to copy, extend, and maintain.
 
 ### Principles
 
-1. **Modular by feature** — domain code lives under `app/Modules/{Name}/`. Shared core
-   (`app/Services`, filters, auth, users, RBAC, audit) stays outside modules.
+1. **Modular by feature** — domain code lives under `app/Modules/{Name}/` with **Indonesian**
+   `{Name}` (see [`MODULE_NAMING.md`](./MODULE_NAMING.md)). Shared core (`app/Services`,
+   filters, auth, users, RBAC, audit) stays outside modules and may use English.
 2. **Thin controllers** — parse input, call one service/action, map result to JSON.
    Use `ApiResponse` envelopes. Prefer the `MapsApiExceptions` trait for consistent
    401/404/422 mapping.
@@ -25,8 +29,8 @@ stays simple to copy, extend, and maintain.
 8. **Grow structure only when needed** — a small module is one service; add
    `Actions/`, `*QueryService`, and `Shared/` when the facade would otherwise bloat.
 9. **Permissions on routes** — `permission:resource.action` filters, not ad-hoc checks
-   inside controller methods.
-10. **Same shape every feature** — copy Inmate (or the thin-module template), do not invent layers.
+   inside controller methods. Resource names are Indonesian (`wbp.read`, `kunjungan.write`).
+10. **Same shape every feature** — copy **Wbp** (grown) or **Kunjungan** (thin); do not invent layers.
 
 ### Exception contract
 
@@ -56,19 +60,19 @@ composer test -- --filter Feature
 
 | Kind | Module | When to copy |
 |------|--------|--------------|
-| **Thin module** (default start) | [`app/Modules/Visit/`](../app/Modules/Visit/) | New feature with a few endpoints and one service |
-| **Grown module** | [`app/Modules/Inmate/`](../app/Modules/Inmate/) | Many processes; need Actions / QueryService / Shared |
-| **Cross-module orchestrator** | [`app/Modules/Transfer/`](../app/Modules/Transfer/) | One use case that coordinates other modules via facades |
+| **Thin module** (default start) | [`app/Modules/Kunjungan/`](../app/Modules/Kunjungan/) | New feature with a few endpoints and one service |
+| **Grown module** | [`app/Modules/Wbp/`](../app/Modules/Wbp/) | Many processes; need Actions / QueryService / Shared |
+| **Cross-module orchestrator** | [`app/Modules/Mutasi/`](../app/Modules/Mutasi/) | One use case that coordinates other modules via facades |
 
-**Always start thin (Visit).** Grow toward Inmate only when the single service becomes a god class.
-Empty module folders (Facility, Medical, …) are placeholders — do not copy them.
+**Always start thin (Kunjungan).** Grow toward Wbp only when the single service becomes a god class.
+Empty placeholders (`Fasilitas`, `Keswat`, `Perkara`, …) — do not copy empty shells.
 
-### Thin module skeleton (Visit)
+### Thin module skeleton (Kunjungan)
 
 ```
 Config/Routes.php
-Controllers/Api/{Things}.php   # MapsApiExceptions + Config\Services::…
-Services/{Thing}Service.php    # org scope, rules, throw on failure
+Controllers/Api/{Resources}.php   # MapsApiExceptions + Config\Services::…
+Services/{Name}Service.php        # org scope, rules, throw on failure
 Models/ + Entities/
 Database/Migrations/
 ```
@@ -77,15 +81,15 @@ No `Actions/`, no `*QueryService`, no `Shared/` until you need them.
 
 Checklist when adding a thin module:
 
-1. Folder under `app/Modules/{Name}/` with the files above.
-2. PSR-4 entry in [`app/Config/Autoload.php`](../app/Config/Autoload.php) (Visit already registered).
-3. Factory method in [`app/Config/Services.php`](../app/Config/Services.php) — default `$getShared = false`.
-4. `Config/Routes.php` with `apiAuth`, `orgScope`, and `permission:{resource}.{action}`.
-5. Domain table includes `organization_id`; creates bind to active org; reads use `getScopedOrgIds()`.
+1. Folder under `app/Modules/{Name}/` with **Indonesian** `{Name}` ([`MODULE_NAMING.md`](./MODULE_NAMING.md)).
+2. PSR-4 entry in [`app/Config/Autoload.php`](../app/Config/Autoload.php).
+3. Factory method in [`app/Config/Services.php`](../app/Config/Services.php) — default `$getShared = false` (e.g. `kunjunganService()`).
+4. `Config/Routes.php` with `apiAuth`, `orgScope`, and `permission:{resource}.{action}` (Indonesian resource).
+5. Persistence uses **legacy shared tables** (see migration strategy); scope with `OrgContext` / `ID_UPT` as applicable.
 6. Seed permissions (`{resource}.read`, `{resource}.write`, …) in RBAC seeder.
 7. Feature tests extending `ApiFeatureTestCase` (add module namespace to `$namespace`).
 
-### Grown module extras (Inmate only when needed)
+### Grown module extras (Wbp only when needed)
 
 ```
 Services/{Name}QueryService.php
@@ -98,7 +102,7 @@ Shared/{Helper}.php
 | Area | Location | Responsibility |
 |------|----------|----------------|
 | Shared core | `app/Controllers`, `Services`, `Models`, `Entities`, `Filters`, `Libraries` | Auth, users, org context, RBAC, cross-cutting helpers |
-| Feature domains | `app/Modules/{Name}/` | Inmate, Visit, Remission, Transfer, Medical, Legal, Facility, MasterData, Report |
+| Feature domains | `app/Modules/{Name}/` | **Wbp**, **Kunjungan**, **Remisi**, **Mutasi**, **Keswat**, **Perkara**, **Fasilitas**, **Referensi**, **Laporan** ([map](./MODULE_NAMING.md)) |
 
 Each module owns:
 
@@ -148,23 +152,25 @@ Permissions belong on routes (`permission:…`), not inside controller methods.
 
 ## Adding a new module
 
-Prefer copying the **Visit** thin module, not Inmate.
+Prefer copying the **Kunjungan** thin module, not Wbp. Use an Indonesian name from
+[`MODULE_NAMING.md`](./MODULE_NAMING.md).
 
-1. Create `app/Modules/{Name}/` with the thin skeleton (see Visit).
+1. Create `app/Modules/{Name}/` with the thin skeleton (see Kunjungan).
 2. Register PSR-4 in [`app/Config/Autoload.php`](../app/Config/Autoload.php) if missing:
    `'App\Modules\{Name}' => APPPATH . 'Modules/{Name}'`
-3. Add `Services::{name}Service()` in [`app/Config/Services.php`](../app/Config/Services.php) with `$getShared = false`.
+3. Add `Services::{name}Service()` in [`app/Config/Services.php`](../app/Config/Services.php) with `$getShared = false`
+   (e.g. `wbpService`, `kunjunganService`).
 4. Add `Config/Routes.php` with `apiAuth`, `orgScope`, and `permission:{resource}.{action}`.
-5. Migrations in the module; run:
-   `php spark migrate -n App\\Modules\\{Name}`
-6. Scope every query/write with `OrgContext`; bind creates to the active org.
+5. Migrations only if product allows additive platform DDL; domain tables usually **already exist**
+   in the shared legacy schema (see [`MIGRATION_STRATEGY.md`](./MIGRATION_STRATEGY.md)).
+6. Scope every query/write with `OrgContext`; bind creates to the active unit.
 7. Seed permissions and add feature tests.
 
 ## Module internals (scaling to many processes)
 
 A small module can live in one `*Service`. As it grows to dozens/hundreds of
-business processes, split it so the facade never becomes a god class. The Inmate
-module is the reference:
+business processes, split it so the facade never becomes a god class. The **Wbp**
+module is the grown reference:
 
 ```
 Controllers/Api/     # one controller per process family (thin HTTP only)
@@ -184,29 +190,29 @@ Guidelines:
   reused, or would bloat the facade.
 - **Reads can stay on the service** until list/search logic gets large; then
   split `*QueryService`.
-- **Shared helpers** only after the second copy-paste (e.g. `InmateFinder`).
+- **Shared helpers** only after the second copy-paste (e.g. `WbpFinder` / `IdentitasFinder`).
 - **Facade = public surface** for other modules and simple CRUD. Process-only
-  HTTP endpoints may call an Action directly (see `InmateReleases`).
+  HTTP endpoints may call an Action directly (e.g. pembebasan WBP).
 
 ## Module dependency rules
 
 Actions and services **may** call another module — that is how cross-module
-use cases work (e.g. `Transfer` → `Inmate`). Keep it disciplined:
+use cases work (e.g. `Mutasi` → `Wbp`). Keep it disciplined:
 
 1. **Depend on the facade, never the internals.** Inject the other module's
    `*Service` (its public surface). Never reach into another module's
    `Models/`, `Entities/`, or `Actions/` directly.
-2. **Dependencies flow one way — no cycles.** `Transfer → Inmate` is allowed;
-   `Inmate → Transfer` on top of it creates `Inmate ⇄ Transfer` (constructor
+2. **Dependencies flow one way — no cycles.** `Mutasi → Wbp` is allowed;
+   `Wbp → Mutasi` on top of it creates `Wbp ⇄ Mutasi` (constructor
    recursion, untestable). Rough layering:
-   `MasterData → Inmate → {Visit, Medical, Legal, Remission} → Transfer/Report`.
+   `Referensi → Wbp → {Kunjungan, Keswat, Perkara, Remisi} → Mutasi/Laporan`.
    A module never calls back into a module that already depends on it.
 3. **Atomicity is automatic.** A cross-module call inside a `UnitOfWork` joins
    the outer transaction (see below); no extra work to stay atomic.
 4. **Coordinating 3+ modules ⇒ it's an orchestrator, not an Action.** One
-   outbound call (e.g. `ReleaseInmate` asking Legal to verify no pending case)
+   outbound call (e.g. pembebasan asking Perkara to verify no blocking case)
    is fine. When a process must coordinate several modules, promote it to its
-   own module that calls down into all of them — the way `Transfer` does —
+   own module that calls down into all of them — the way `Mutasi` does —
    so no domain module silently becomes the hub everyone depends on.
 
 ## Auth tokens
@@ -226,6 +232,25 @@ send `X-Org-Code` (and optionally `X-Org-Id` for the local id inside that DB).
 - `user_organization_roles` — user ↔ org ↔ role
 - `api_tokens`, `audit_logs`
 - Domain tables: include `organization_id`, soft deletes, timestamps
+
+### Migration constraint (shared legacy schema)
+
+Product direction for production SDP is documented in
+[`docs/MIGRATION_STRATEGY.md`](./MIGRATION_STRATEGY.md) (**rev 3**):
+
+1. **Domain tables stay the legacy structure** (`identitas`, `perkara`, `kunjungan`, …).
+   Do not treat greenfield module tables (`inmates`, `visits`, …) as the production SoR.
+2. **Transition = two codebases, one database.** Migrated capabilities are owned by this API;
+   legacy CI2 **HTTP-calls** the API (single writer per capability).
+3. **Org scoping** maps to legacy unit keys (`ID_UPT` / existing hierarchy), not a parallel
+   invented domain schema.
+4. Module **layout** in this document (thin controllers, services, facades, `UnitOfWork`,
+   feature tests) still applies — only the **persistence mapping** follows legacy columns.
+5. **Module names are Indonesian** ([`MODULE_NAMING.md`](./MODULE_NAMING.md)): `Wbp`, `Kunjungan`,
+   `Mutasi`, `Remisi`, `Perkara`, `Keswat`, `Fasilitas`, `Referensi`, `Laporan`.
+
+Platform auth tables (`api_tokens`, RBAC) may remain API-native if product approves additive
+tables; prefer mapping to `pengguna` / existing ACL when feasible.
 
 ## Response envelope
 
@@ -324,7 +349,7 @@ php spark migrate:tenants
 php spark migrate:tenants --seed   # also RbacSeeder + DemoAuthSeeder per tenant
 ```
 
-### Transfer limitation in `multi`
+### Mutasi (transfer) limitation in `multi`
 
 Same-DB transfers (e.g. two orgs mirrored inside a Kanwil DB) still use
 `UnitOfWork`. Cross-unit moves between two tenant databases (Cipinang DB →

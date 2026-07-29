@@ -82,31 +82,31 @@ class Services extends BaseService
         return new \App\Services\ConnectionResolver();
     }
 
-    public static function inmateService(bool $getShared = false): \App\Modules\Inmate\Services\InmateService
+    public static function wbpService(bool $getShared = false): \App\Modules\Wbp\Services\WbpService
     {
         if ($getShared) {
-            return static::getSharedInstance('inmateService');
+            return static::getSharedInstance('wbpService');
         }
 
-        return new \App\Modules\Inmate\Services\InmateService();
+        return new \App\Modules\Wbp\Services\WbpService();
     }
 
-    public static function transferService(bool $getShared = false): \App\Modules\Transfer\Services\TransferService
+    public static function mutasiService(bool $getShared = false): \App\Modules\Mutasi\Services\MutasiService
     {
         if ($getShared) {
-            return static::getSharedInstance('transferService');
+            return static::getSharedInstance('mutasiService');
         }
 
-        return new \App\Modules\Transfer\Services\TransferService();
+        return new \App\Modules\Mutasi\Services\MutasiService();
     }
 
-    /** Thin-module reference — see App\Modules\Visit. */
-    public static function visitService(bool $getShared = false): \App\Modules\Visit\Services\VisitService
+    /** Thin-module reference — see App\Modules\Kunjungan. */
+    public static function kunjunganService(bool $getShared = false): \App\Modules\Kunjungan\Services\KunjunganService
     {
         if ($getShared) {
-            return static::getSharedInstance('visitService');
+            return static::getSharedInstance('kunjunganService');
         }
 
-        return new \App\Modules\Visit\Services\VisitService();
+        return new \App\Modules\Kunjungan\Services\KunjunganService();
     }
 }

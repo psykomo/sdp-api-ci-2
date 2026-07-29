@@ -2,7 +2,7 @@
 
 namespace Tests\Support\Feature;
 
-use App\Modules\Inmate\Services\InmateService;
+use App\Modules\Wbp\Services\WbpService;
 use App\Services\AuthService;
 use App\Services\ConnectionResolver;
 use App\Services\OrgContext;
@@ -32,14 +32,14 @@ abstract class ApiFeatureTestCase extends CIUnitTestCase
     protected $basePath = TESTPATH . '_support/Database';
 
     /**
-     * App + Inmate migrations (Transfer not required for current feature suite).
+     * App + Wbp migrations (Transfer not required for current feature suite).
      *
      * @var list<string>
      */
     protected $namespace = [
         'App',
-        'App\Modules\Inmate',
-        'App\Modules\Visit',
+        'App\Modules\Wbp',
+        'App\Modules\Kunjungan',
     ];
 
     protected function setUp(): void
@@ -60,8 +60,8 @@ abstract class ApiFeatureTestCase extends CIUnitTestCase
         Services::injectMock('authService', new AuthService());
         Services::injectMock('permissionService', new PermissionService());
         Services::injectMock('userService', new UserService());
-        Services::injectMock('inmateService', new InmateService());
-        Services::injectMock('visitService', new \App\Modules\Visit\Services\VisitService());
+        Services::injectMock('wbpService', new WbpService());
+        Services::injectMock('kunjunganService', new \App\Modules\Kunjungan\Services\KunjunganService());
         Services::injectMock('unitOfWork', new UnitOfWork());
     }
 

@@ -7,7 +7,7 @@ use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 
 /**
- * Route filter: permission:inmate.read
+ * Route filter: permission:wbp.read
  * Checks OrgContext permissions populated by OrgScope.
  */
 class Permission implements FilterInterface

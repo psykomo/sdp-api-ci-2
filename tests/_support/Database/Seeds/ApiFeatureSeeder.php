@@ -45,14 +45,14 @@ class ApiFeatureSeeder extends Seeder
         ]);
 
         $permissions = [
-            'inmate.read',
-            'inmate.write',
-            'inmate.delete',
-            'inmate.release',
-            'inmate.transfer',
-            'visit.read',
-            'visit.write',
-            'visit.delete',
+            'wbp.read',
+            'wbp.write',
+            'wbp.delete',
+            'wbp.release',
+            'wbp.mutasi',
+            'kunjungan.read',
+            'kunjungan.write',
+            'kunjungan.delete',
             'user.read',
             'user.write',
             'user.delete',
@@ -81,8 +81,8 @@ class ApiFeatureSeeder extends Seeder
             ];
         }
         foreach ([
-            'inmate.read', 'inmate.write', 'inmate.release', 'inmate.transfer',
-            'visit.read', 'visit.write',
+            'wbp.read', 'wbp.write', 'wbp.release', 'wbp.mutasi',
+            'kunjungan.read', 'kunjungan.write',
             'user.read',
         ] as $key) {
             $assignments[] = [
@@ -90,7 +90,7 @@ class ApiFeatureSeeder extends Seeder
                 'permission_id' => (int) $permsByKey[$key],
             ];
         }
-        foreach (['inmate.read', 'visit.read', 'user.read'] as $key) {
+        foreach (['wbp.read', 'kunjungan.read', 'user.read'] as $key) {
             $assignments[] = [
                 'role_id'       => (int) $rolesByKey['viewer'],
                 'permission_id' => (int) $permsByKey[$key],

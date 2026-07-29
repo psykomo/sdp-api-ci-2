@@ -31,15 +31,15 @@ class Autoload extends AutoloadConfig
      */
     public $psr4 = [
         APP_NAMESPACE              => APPPATH,
-        'App\Modules\Inmate'       => APPPATH . 'Modules/Inmate',
-        'App\Modules\Facility'     => APPPATH . 'Modules/Facility',
-        'App\Modules\Visit'        => APPPATH . 'Modules/Visit',
-        'App\Modules\Remission'    => APPPATH . 'Modules/Remission',
-        'App\Modules\Transfer'     => APPPATH . 'Modules/Transfer',
-        'App\Modules\Medical'      => APPPATH . 'Modules/Medical',
-        'App\Modules\Legal'        => APPPATH . 'Modules/Legal',
-        'App\Modules\MasterData'   => APPPATH . 'Modules/MasterData',
-        'App\Modules\Report'       => APPPATH . 'Modules/Report',
+        'App\Modules\Wbp'       => APPPATH . 'Modules/Wbp',
+        'App\Modules\Fasilitas' => APPPATH . 'Modules/Fasilitas',
+        'App\Modules\Kunjungan' => APPPATH . 'Modules/Kunjungan',
+        'App\Modules\Remisi'    => APPPATH . 'Modules/Remisi',
+        'App\Modules\Mutasi'    => APPPATH . 'Modules/Mutasi',
+        'App\Modules\Keswat'    => APPPATH . 'Modules/Keswat',
+        'App\Modules\Perkara'   => APPPATH . 'Modules/Perkara',
+        'App\Modules\Referensi' => APPPATH . 'Modules/Referensi',
+        'App\Modules\Laporan'   => APPPATH . 'Modules/Laporan',
     ];
 
     /**
