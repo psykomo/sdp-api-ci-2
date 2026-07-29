@@ -2,6 +2,7 @@
 
 namespace App\Modules\Inmate\Services;
 
+use App\Exceptions\ValidationException;
 use App\Modules\Inmate\Actions\RegisterInmate;
 use App\Modules\Inmate\Shared\InmateAuditWriter;
 use App\Modules\Inmate\Shared\InmateFinder;
@@ -14,11 +15,9 @@ use RuntimeException;
 /**
  * Facade / composition root for the Inmate module.
  *
- * As the module grows to hundreds of processes, this class does NOT grow with
- * it. Reads delegate to InmateQueryService, each write use-case lives in its
- * own Action (e.g. RegisterInmate, ReleaseInmate). This facade only exists to
- * give callers (controllers, other modules) one stable entry point and to
- * share a single InmateModel instance so validation errors() stay accessible.
+ * Public surface for controllers and other modules. Reads go through
+ * InmateQueryService; multi-step writes may live in Actions and still be
+ * reachable here when other modules need them.
  */
 class InmateService
 {
@@ -66,48 +65,39 @@ class InmateService
     /**
      * Register a new inmate — delegates to the RegisterInmate action.
      *
-     * Kept returning object|false so the existing controller contract holds.
-     *
      * @param array<string, mixed> $data
      */
-    public function create(array $data): object|false
+    public function create(array $data): object
     {
-        try {
-            return $this->register->execute($data);
-        } catch (DomainException | RuntimeException) {
-            return false;
-        }
+        return $this->register->execute($data);
     }
 
     /**
      * @param array<string, mixed> $data
      */
-    public function update(int|string $id, array $data): object|false
+    public function update(int|string $id, array $data): object
     {
         $this->findOrFail($id);
 
         unset($data['organization_id']);
 
-        try {
-            return $this->unitOfWork->run(function () use ($id, $data): object {
-                if ($this->inmates->update($id, $data) === false) {
-                    throw new RuntimeException(
-                        'Unable to update inmate: ' . implode(' ', $this->inmates->errors()),
-                    );
-                }
+        return $this->unitOfWork->run(function () use ($id, $data): object {
+            if ($this->inmates->update($id, $data) === false) {
+                throw new ValidationException(
+                    'Validation failed.',
+                    $this->inmates->errors(),
+                );
+            }
 
-                $this->auditWriter->record('inmate.updated', (int) $id);
+            $this->auditWriter->record('inmate.updated', (int) $id);
 
-                $inmate = $this->inmates->find($id);
-                if ($inmate === null) {
-                    throw new RuntimeException('Updated inmate could not be reloaded.');
-                }
+            $inmate = $this->inmates->find($id);
+            if ($inmate === null) {
+                throw new RuntimeException('Updated inmate could not be reloaded.');
+            }
 
-                return $inmate;
-            });
-        } catch (RuntimeException) {
-            return false;
-        }
+            return $inmate;
+        });
     }
 
     public function delete(int|string $id): void
@@ -135,8 +125,9 @@ class InmateService
                 'organization_id' => $toOrganizationId,
                 'status'          => 'active',
             ]) === false) {
-                throw new RuntimeException(
-                    'Unable to transfer inmate: ' . implode(' ', $this->inmates->errors()),
+                throw new ValidationException(
+                    'Unable to transfer inmate.',
+                    $this->inmates->errors(),
                 );
             }
 
@@ -147,13 +138,5 @@ class InmateService
 
             return $inmate;
         });
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function errors(): array
-    {
-        return $this->inmates->errors();
     }
 }

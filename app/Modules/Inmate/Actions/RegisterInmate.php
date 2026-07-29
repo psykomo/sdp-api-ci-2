@@ -2,6 +2,7 @@
 
 namespace App\Modules\Inmate\Actions;
 
+use App\Exceptions\ValidationException;
 use App\Modules\Inmate\Models\InmateModel;
 use App\Modules\Inmate\Shared\InmateAuditWriter;
 use App\Services\OrgContext;
@@ -11,9 +12,6 @@ use RuntimeException;
 
 /**
  * Business process: register (intake) a new inmate into the active unit.
- *
- * One process = one class with a single execute(). Multi-write, so it runs
- * inside a UnitOfWork and is safe to nest inside a larger transaction.
  */
 class RegisterInmate
 {
@@ -29,9 +27,6 @@ class RegisterInmate
 
     /**
      * @param array<string, mixed> $data
-     *
-     * @throws DomainException  when there is no active organization in context
-     * @throws RuntimeException when persistence/validation fails (carries model errors)
      */
     public function execute(array $data): object
     {
@@ -47,8 +42,9 @@ class RegisterInmate
         return $this->unitOfWork->run(function () use ($data, $activeOrgId): object {
             $id = $this->inmates->insert($data);
             if ($id === false) {
-                throw new RuntimeException(
-                    'Unable to register inmate: ' . implode(' ', $this->inmates->errors()),
+                throw new ValidationException(
+                    'Validation failed.',
+                    $this->inmates->errors(),
                 );
             }
 
@@ -61,15 +57,5 @@ class RegisterInmate
 
             return $inmate;
         });
-    }
-
-    /**
-     * Validation errors from the last failed execute(), for HTTP 422 payloads.
-     *
-     * @return array<string, string>
-     */
-    public function errors(): array
-    {
-        return $this->inmates->errors();
     }
 }

@@ -74,6 +74,14 @@ class ExtendUsersAndCreateApiTokens extends Migration
     public function down()
     {
         $this->forge->dropTable('api_tokens', true);
+
+        // SQLite (used in tests / local) cannot always DROP COLUMN. The prior
+        // CreateUsersTable migration drops the whole table on regress, so
+        // leaving these columns on SQLite is safe for refresh cycles.
+        if ($this->db->DBDriver === 'SQLite3') {
+            return;
+        }
+
         $this->forge->dropColumn('users', ['password_hash', 'deleted_at']);
     }
 }

@@ -1,29 +1,28 @@
 <?php
 
-namespace App\Modules\Inmate\Controllers\Api;
+namespace App\Modules\Visit\Controllers\Api;
 
 use App\Libraries\ApiResponse;
 use App\Libraries\MapsApiExceptions;
-use App\Modules\Inmate\Services\InmateService;
+use App\Modules\Visit\Services\VisitService;
 use CodeIgniter\RESTful\ResourceController;
 use Config\Services;
 
 /**
- * Inmates Resource Controller (WBP / narapidana).
+ * Thin-module reference controller — HTTP only.
  *
- * Thin HTTP layer — business rules live in InmateService.
+ * @see \App\Modules\Visit\Services\VisitService
  */
-class Inmates extends ResourceController
+class Visits extends ResourceController
 {
     use MapsApiExceptions;
 
     protected $format = 'json';
 
     public function __construct(
-        protected ?InmateService $service = null,
+        protected ?VisitService $visits = null,
     ) {
-        // Prefer Config\Services over service() so static analysis / LSP can resolve the call.
-        $this->service ??= Services::inmateService();
+        $this->visits ??= Services::visitService();
     }
 
     public function index()
@@ -31,8 +30,7 @@ class Inmates extends ResourceController
         return $this->apiTry(function () {
             $perPage = (int) ($this->request->getGet('perPage') ?: 10);
             $search  = $this->request->getGet('search');
-
-            $result = $this->service->list($perPage, $search);
+            $result  = $this->visits->list($perPage, $search);
 
             return $this->respond(ApiResponse::paginated($result['items'], $result['meta']));
         });
@@ -41,9 +39,9 @@ class Inmates extends ResourceController
     public function show($id = null)
     {
         return $this->apiTry(function () use ($id) {
-            $inmate = $this->service->findOrFail($id);
+            $visit = $this->visits->findOrFail($id);
 
-            return $this->respond(ApiResponse::success($inmate));
+            return $this->respond(ApiResponse::success($visit));
         });
     }
 
@@ -56,9 +54,9 @@ class Inmates extends ResourceController
                 return $this->respond(ApiResponse::error('No data provided.', 422), 422);
             }
 
-            $inmate = $this->service->create($data);
+            $visit = $this->visits->create($data);
 
-            return $this->respondCreated(ApiResponse::success($inmate, 'Inmate created', 201));
+            return $this->respondCreated(ApiResponse::success($visit, 'Visit created', 201));
         });
     }
 
@@ -71,18 +69,18 @@ class Inmates extends ResourceController
                 return $this->respond(ApiResponse::error('No data provided.', 422), 422);
             }
 
-            $inmate = $this->service->update($id, $data);
+            $visit = $this->visits->update($id, $data);
 
-            return $this->respond(ApiResponse::success($inmate, 'Inmate updated'));
+            return $this->respond(ApiResponse::success($visit, 'Visit updated'));
         });
     }
 
     public function delete($id = null)
     {
         return $this->apiTry(function () use ($id) {
-            $this->service->delete($id);
+            $this->visits->delete($id);
 
-            return $this->respondDeleted(ApiResponse::success(['id' => (int) $id], 'Inmate deleted'));
+            return $this->respondDeleted(ApiResponse::success(['id' => (int) $id], 'Visit deleted'));
         });
     }
 }

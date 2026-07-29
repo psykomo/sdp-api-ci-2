@@ -3,18 +3,21 @@
 namespace App\Modules\Transfer\Controllers\Api;
 
 use App\Libraries\ApiResponse;
+use App\Libraries\MapsApiExceptions;
 use App\Modules\Transfer\Services\TransferService;
-use CodeIgniter\Exceptions\PageNotFoundException;
 use CodeIgniter\RESTful\ResourceController;
-use DomainException;
+use Config\Services;
 
 class Transfers extends ResourceController
 {
+    use MapsApiExceptions;
+
     protected $format = 'json';
 
     public function __construct(
-        protected TransferService $transfers = new TransferService(),
+        protected ?TransferService $transfers = null,
     ) {
+        $this->transfers ??= Services::transferService();
     }
 
     /**
@@ -22,24 +25,14 @@ class Transfers extends ResourceController
      */
     public function create($inmateId = null)
     {
-        $data = $this->request->getJSON(true) ?? [];
+        return $this->apiTry(function () use ($inmateId) {
+            $data = $this->request->getJSON(true) ?? [];
 
-        try {
             $result = $this->transfers->execute((int) $inmateId, $data);
-        } catch (PageNotFoundException $exception) {
-            return $this->respond(
-                ApiResponse::error($exception->getMessage(), 404),
-                404,
-            );
-        } catch (DomainException $exception) {
-            return $this->respond(
-                ApiResponse::error($exception->getMessage(), 422),
-                422,
-            );
-        }
 
-        return $this->respondCreated(
-            ApiResponse::success($result, 'Inmate transferred', 201),
-        );
+            return $this->respondCreated(
+                ApiResponse::success($result, 'Inmate transferred', 201),
+            );
+        });
     }
 }

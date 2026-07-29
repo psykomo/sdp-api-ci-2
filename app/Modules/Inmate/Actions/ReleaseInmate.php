@@ -2,6 +2,7 @@
 
 namespace App\Modules\Inmate\Actions;
 
+use App\Exceptions\ValidationException;
 use App\Modules\Inmate\Models\InmateModel;
 use App\Modules\Inmate\Models\InmateReleaseModel;
 use App\Modules\Inmate\Shared\InmateAuditWriter;
@@ -83,8 +84,9 @@ class ReleaseInmate
             $notes,
         ): array {
             if ($this->inmates->update($inmateId, ['status' => 'released']) === false) {
-                throw new RuntimeException(
-                    'Unable to update inmate status: ' . implode(' ', $this->inmates->errors()),
+                throw new ValidationException(
+                    'Unable to update inmate status.',
+                    $this->inmates->errors(),
                 );
             }
 
@@ -99,8 +101,9 @@ class ReleaseInmate
             ]);
 
             if ($releaseId === false) {
-                throw new RuntimeException(
-                    'Unable to record release: ' . implode(' ', $this->releases->errors()),
+                throw new ValidationException(
+                    'Unable to record release.',
+                    $this->releases->errors(),
                 );
             }
 

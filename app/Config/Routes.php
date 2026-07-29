@@ -25,10 +25,12 @@ $routes->group('api', static function (RouteCollection $routes) {
 
         // Protected + org-scoped resources
         $routes->group('', ['filter' => ['apiAuth', 'orgScope']], static function (RouteCollection $routes) {
-            $routes->resource('users', [
-                'controller' => 'Api\Users',
-                'except'     => ['new', 'edit'],
-            ]);
+            $routes->get('users', 'Api\Users::index', ['filter' => 'permission:user.read']);
+            $routes->get('users/(:num)', 'Api\Users::show/$1', ['filter' => 'permission:user.read']);
+            $routes->post('users', 'Api\Users::create', ['filter' => 'permission:user.write']);
+            $routes->put('users/(:num)', 'Api\Users::update/$1', ['filter' => 'permission:user.write']);
+            $routes->patch('users/(:num)', 'Api\Users::update/$1', ['filter' => 'permission:user.write']);
+            $routes->delete('users/(:num)', 'Api\Users::delete/$1', ['filter' => 'permission:user.delete']);
 
             // Feature module routes: App\Modules\*\Config\Routes.php (auto-discovered)
         });

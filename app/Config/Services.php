@@ -31,7 +31,13 @@ class Services extends BaseService
         return new \App\Services\OrgContext();
     }
 
-    public static function authService(bool $getShared = true): \App\Services\AuthService
+    /**
+     * Domain services that hold CI Models are intentionally not shared by default.
+     * Models retain WHERE/builder state; a long-lived shared instance can leak
+     * filters across HTTP calls (feature tests, FPM workers, queue workers).
+     * Pass $getShared = true only when you need a deliberate singleton.
+     */
+    public static function authService(bool $getShared = false): \App\Services\AuthService
     {
         if ($getShared) {
             return static::getSharedInstance('authService');
@@ -40,7 +46,7 @@ class Services extends BaseService
         return new \App\Services\AuthService();
     }
 
-    public static function permissionService(bool $getShared = true): \App\Services\PermissionService
+    public static function permissionService(bool $getShared = false): \App\Services\PermissionService
     {
         if ($getShared) {
             return static::getSharedInstance('permissionService');
@@ -49,7 +55,7 @@ class Services extends BaseService
         return new \App\Services\PermissionService();
     }
 
-    public static function userService(bool $getShared = true): \App\Services\UserService
+    public static function userService(bool $getShared = false): \App\Services\UserService
     {
         if ($getShared) {
             return static::getSharedInstance('userService');
@@ -58,7 +64,7 @@ class Services extends BaseService
         return new \App\Services\UserService();
     }
 
-    public static function unitOfWork(bool $getShared = true): \App\Services\UnitOfWork
+    public static function unitOfWork(bool $getShared = false): \App\Services\UnitOfWork
     {
         if ($getShared) {
             return static::getSharedInstance('unitOfWork');
@@ -76,7 +82,7 @@ class Services extends BaseService
         return new \App\Services\ConnectionResolver();
     }
 
-    public static function inmateService(bool $getShared = true): \App\Modules\Inmate\Services\InmateService
+    public static function inmateService(bool $getShared = false): \App\Modules\Inmate\Services\InmateService
     {
         if ($getShared) {
             return static::getSharedInstance('inmateService');
@@ -85,12 +91,22 @@ class Services extends BaseService
         return new \App\Modules\Inmate\Services\InmateService();
     }
 
-    public static function transferService(bool $getShared = true): \App\Modules\Transfer\Services\TransferService
+    public static function transferService(bool $getShared = false): \App\Modules\Transfer\Services\TransferService
     {
         if ($getShared) {
             return static::getSharedInstance('transferService');
         }
 
         return new \App\Modules\Transfer\Services\TransferService();
+    }
+
+    /** Thin-module reference — see App\Modules\Visit. */
+    public static function visitService(bool $getShared = false): \App\Modules\Visit\Services\VisitService
+    {
+        if ($getShared) {
+            return static::getSharedInstance('visitService');
+        }
+
+        return new \App\Modules\Visit\Services\VisitService();
     }
 }

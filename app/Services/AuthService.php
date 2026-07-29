@@ -2,13 +2,17 @@
 
 namespace App\Services;
 
+use App\Exceptions\AuthenticationException;
 use App\Models\ApiTokenModel;
 use App\Models\UserModel;
 use App\Models\UserOrganizationRoleModel;
+use DomainException;
+use InvalidArgumentException;
 
 /**
- * Thin auth facade. Token strategy can be swapped (JWT, Shield, SSO)
- * without changing filters or controllers.
+ * Auth use cases: login and Bearer token validation.
+ *
+ * Token strategy (opaque hash today) can be swapped later without changing filters.
  */
 class AuthService
 {
@@ -16,7 +20,84 @@ class AuthService
         protected UserModel $users = new UserModel(),
         protected ApiTokenModel $tokens = new ApiTokenModel(),
         protected UserOrganizationRoleModel $userOrgRoles = new UserOrganizationRoleModel(),
+        protected ?ConnectionResolver $resolver = null,
     ) {
+        $this->resolver ??= service('connectionResolver');
+    }
+
+    /**
+     * Authenticate credentials and issue a Bearer token.
+     *
+     * In multi topology, `$organizationCode` selects the tenant database first.
+     *
+     * @return array{
+     *     token: string,
+     *     expires_at: string|null,
+     *     token_type: string,
+     *     user: array<string, mixed>,
+     *     organization_code?: string
+     * }
+     *
+     * @throws DomainException when multi topology requires organization_code
+     * @throws AuthenticationException when credentials are invalid or account inactive
+     */
+    public function login(string $email, string $password, ?string $organizationCode = null): array
+    {
+        $email    = strtolower(trim($email));
+        $orgCode  = strtoupper(trim((string) $organizationCode));
+
+        if ($email === '' || $password === '') {
+            throw new DomainException('Email and password are required.');
+        }
+
+        if ($this->resolver->isMulti()) {
+            if ($orgCode === '') {
+                throw new DomainException('organization_code is required in multi database topology.');
+            }
+
+            try {
+                $this->resolver->activateForOrgCode($orgCode);
+            } catch (InvalidArgumentException $e) {
+                throw new DomainException($e->getMessage(), 0, $e);
+            }
+
+            // Models must bind to the activated default connection.
+            $this->users  = model(UserModel::class, false);
+            $this->tokens = model(ApiTokenModel::class, false);
+        }
+
+        $user = $this->users->where('email', $email)->first();
+
+        if ($user === null) {
+            throw new AuthenticationException('Invalid credentials.');
+        }
+
+        $userData = is_object($user) ? $user->toRawArray() : $user;
+
+        if (($userData['status'] ?? '') !== 'active') {
+            throw new AuthenticationException('Invalid credentials.');
+        }
+
+        $hash = $userData['password_hash'] ?? null;
+        if ($hash === null || $hash === '' || ! password_verify($password, $hash)) {
+            throw new AuthenticationException('Invalid credentials.');
+        }
+
+        $token = $this->issueToken((int) $userData['id']);
+        unset($userData['password_hash']);
+
+        $payload = [
+            'token'      => $token['token'],
+            'expires_at' => $token['expires_at'],
+            'token_type' => 'Bearer',
+            'user'       => $userData,
+        ];
+
+        if ($this->resolver->isMulti()) {
+            $payload['organization_code'] = $orgCode;
+        }
+
+        return $payload;
     }
 
     /**
@@ -72,7 +153,11 @@ class AuthService
             $orgRoles,
         )));
 
-        $this->tokens->update($tokenRow['id'], ['last_used_at' => date('Y-m-d H:i:s')]);
+        // Throttle last_used_at writes (at most once per minute).
+        $lastUsed = $tokenRow['last_used_at'] ?? null;
+        if ($lastUsed === null || strtotime((string) $lastUsed) < (time() - 60)) {
+            $this->tokens->update($tokenRow['id'], ['last_used_at' => date('Y-m-d H:i:s')]);
+        }
 
         return [
             'user'            => $userData,

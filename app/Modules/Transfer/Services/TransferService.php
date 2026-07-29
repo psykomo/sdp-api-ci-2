@@ -2,6 +2,7 @@
 
 namespace App\Modules\Transfer\Services;
 
+use App\Exceptions\ValidationException;
 use App\Models\AuditLogModel;
 use App\Models\OrganizationModel;
 use App\Modules\Inmate\Services\InmateService;
@@ -88,8 +89,9 @@ class TransferService
             ]);
 
             if ($transferId === false) {
-                throw new RuntimeException(
-                    'Unable to record transfer: ' . implode(' ', $this->transfers->errors()),
+                throw new ValidationException(
+                    'Unable to record transfer.',
+                    $this->transfers->errors(),
                 );
             }
 

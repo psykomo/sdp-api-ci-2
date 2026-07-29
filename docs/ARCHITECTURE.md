@@ -2,6 +2,97 @@
 
 Inmate Management System (SDP) API — CodeIgniter 4, **hybrid + multi-org**.
 
+## House style (pragmatic modular API)
+
+This is **not** strict DDD or Clean Architecture. It is a modular layered API that
+stays simple to copy, extend, and maintain.
+
+### Principles
+
+1. **Modular by feature** — domain code lives under `app/Modules/{Name}/`. Shared core
+   (`app/Services`, filters, auth, users, RBAC, audit) stays outside modules.
+2. **Thin controllers** — parse input, call one service/action, map result to JSON.
+   Use `ApiResponse` envelopes. Prefer the `MapsApiExceptions` trait for consistent
+   401/404/422 mapping.
+3. **Services hold rules** — org scoping, business guards, multi-write orchestration,
+   audit. Never put org filters or business rules in controllers.
+4. **Models are persistence** — table mapping, `$allowedFields`, field validation only.
+5. **Always scope with `OrgContext`** — never trust client-supplied org ids for
+   authorization; use active/scoped org ids from filters.
+6. **Multi-write → `UnitOfWork`** — nest-safe; module-local and cross-module.
+7. **Cross-module via public service only** — no reaching into another module’s Models
+   or Actions. No dependency cycles.
+8. **Grow structure only when needed** — a small module is one service; add
+   `Actions/`, `*QueryService`, and `Shared/` when the facade would otherwise bloat.
+9. **Permissions on routes** — `permission:resource.action` filters, not ad-hoc checks
+   inside controller methods.
+10. **Same shape every feature** — copy Inmate (or the thin-module template), do not invent layers.
+
+### Exception contract
+
+| Exception | HTTP | When |
+|-----------|------|------|
+| `PageNotFoundException` | 404 | Missing or out-of-scope resource |
+| `App\Exceptions\ValidationException` | 422 | Field validation (`errors` payload) |
+| `DomainException` | 422 | Business rule violation |
+| `App\Exceptions\AuthenticationException` | 401 | Login / credentials failure |
+| Anything else | 500 | Unexpected; let CI handle |
+
+Services and actions **throw**; controllers **map**. Do not return `false` for domain failures.
+
+### Feature tests
+
+HTTP feature tests live under `tests/feature/` and extend
+`Tests\Support\Feature\ApiFeatureTestCase` (in-memory SQLite, App + module
+migrations, `ApiFeatureSeeder`). Run:
+
+```bash
+composer test -- --filter Feature
+# or
+./vendor/bin/phpunit --filter Feature
+```
+
+### Implementation references
+
+| Kind | Module | When to copy |
+|------|--------|--------------|
+| **Thin module** (default start) | [`app/Modules/Visit/`](../app/Modules/Visit/) | New feature with a few endpoints and one service |
+| **Grown module** | [`app/Modules/Inmate/`](../app/Modules/Inmate/) | Many processes; need Actions / QueryService / Shared |
+| **Cross-module orchestrator** | [`app/Modules/Transfer/`](../app/Modules/Transfer/) | One use case that coordinates other modules via facades |
+
+**Always start thin (Visit).** Grow toward Inmate only when the single service becomes a god class.
+Empty module folders (Facility, Medical, …) are placeholders — do not copy them.
+
+### Thin module skeleton (Visit)
+
+```
+Config/Routes.php
+Controllers/Api/{Things}.php   # MapsApiExceptions + Config\Services::…
+Services/{Thing}Service.php    # org scope, rules, throw on failure
+Models/ + Entities/
+Database/Migrations/
+```
+
+No `Actions/`, no `*QueryService`, no `Shared/` until you need them.
+
+Checklist when adding a thin module:
+
+1. Folder under `app/Modules/{Name}/` with the files above.
+2. PSR-4 entry in [`app/Config/Autoload.php`](../app/Config/Autoload.php) (Visit already registered).
+3. Factory method in [`app/Config/Services.php`](../app/Config/Services.php) — default `$getShared = false`.
+4. `Config/Routes.php` with `apiAuth`, `orgScope`, and `permission:{resource}.{action}`.
+5. Domain table includes `organization_id`; creates bind to active org; reads use `getScopedOrgIds()`.
+6. Seed permissions (`{resource}.read`, `{resource}.write`, …) in RBAC seeder.
+7. Feature tests extending `ApiFeatureTestCase` (add module namespace to `$namespace`).
+
+### Grown module extras (Inmate only when needed)
+
+```
+Services/{Name}QueryService.php
+Actions/{Process}.php
+Shared/{Helper}.php
+```
+
 ## Layout
 
 | Area | Location | Responsibility |
@@ -47,22 +138,27 @@ Client
 
 ## Layers
 
-1. **Controller** — HTTP only. Use `App\Libraries\ApiResponse` for envelopes.
-2. **Service** — validation orchestration, authorization side-effects, audit logging.
-3. **Model** — table mapping, `$allowedFields`, validation rules.
+1. **Controller** — HTTP only. Use `ApiResponse` + `MapsApiExceptions`.
+2. **Service / Action** — rules, org scoping, UnitOfWork, audit. Throw on failure.
+3. **Model** — table mapping, `$allowedFields`, field validation rules.
 4. **Entity** — casts, mutators, hidden fields (`password_hash`).
 
 Do **not** put business rules or org filters in controllers.
+Permissions belong on routes (`permission:…`), not inside controller methods.
 
 ## Adding a new module
 
-1. Create `app/Modules/{Name}/` with the folders above.
-2. Register PSR-4 in [`app/Config/Autoload.php`](../app/Config/Autoload.php):
+Prefer copying the **Visit** thin module, not Inmate.
+
+1. Create `app/Modules/{Name}/` with the thin skeleton (see Visit).
+2. Register PSR-4 in [`app/Config/Autoload.php`](../app/Config/Autoload.php) if missing:
    `'App\Modules\{Name}' => APPPATH . 'Modules/{Name}'`
-3. Add `Config/Routes.php` under the module; wrap routes with `['filter' => ['apiAuth', 'orgScope']]` and `permission:{resource}.{action}` as needed.
-4. Put migrations in the module; run:
+3. Add `Services::{name}Service()` in [`app/Config/Services.php`](../app/Config/Services.php) with `$getShared = false`.
+4. Add `Config/Routes.php` with `apiAuth`, `orgScope`, and `permission:{resource}.{action}`.
+5. Migrations in the module; run:
    `php spark migrate -n App\\Modules\\{Name}`
-5. Mirror the Inmate pattern: `*Service` injects `service('orgContext')` and scopes every query.
+6. Scope every query/write with `OrgContext`; bind creates to the active org.
+7. Seed permissions and add feature tests.
 
 ## Module internals (scaling to many processes)
 
@@ -84,13 +180,13 @@ Config/Routes.php
 
 Guidelines:
 
-- **One process = one Action.** Business rules live in the Action, not the
-  controller or model. Wrap every multi-write Action in `UnitOfWork`.
-- **Reads stay in the query service**, separate from writes.
-- **Shared helpers** hold rules that would otherwise be copy-pasted (e.g.
-  `InmateFinder` is the single source of "is this inmate in my scope?").
-- **The facade only delegates** — it exists to give callers one stable entry
-  point and to share a single Model instance (so `errors()` stays accessible).
+- **Start with one service.** Extract an Action when a write process is multi-step,
+  reused, or would bloat the facade.
+- **Reads can stay on the service** until list/search logic gets large; then
+  split `*QueryService`.
+- **Shared helpers** only after the second copy-paste (e.g. `InmateFinder`).
+- **Facade = public surface** for other modules and simple CRUD. Process-only
+  HTTP endpoints may call an Action directly (see `InmateReleases`).
 
 ## Module dependency rules
 

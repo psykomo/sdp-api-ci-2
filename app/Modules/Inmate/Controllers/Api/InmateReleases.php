@@ -3,21 +3,21 @@
 namespace App\Modules\Inmate\Controllers\Api;
 
 use App\Libraries\ApiResponse;
+use App\Libraries\MapsApiExceptions;
 use App\Modules\Inmate\Actions\ReleaseInmate;
-use CodeIgniter\Exceptions\PageNotFoundException;
 use CodeIgniter\RESTful\ResourceController;
-use DomainException;
-use RuntimeException;
 
 /**
  * Inmate release (pembebasan) endpoint.
  *
- * Thin HTTP layer: it validates transport concerns, calls the ReleaseInmate
- * action (the actual business process), and maps exceptions to status codes.
- * One controller per process family keeps each one small and focused.
+ * Process controllers may call an Action directly when the process is
+ * HTTP-facing only. Other modules should go through InmateService if/when
+ * the process is exposed on the facade.
  */
 class InmateReleases extends ResourceController
 {
+    use MapsApiExceptions;
+
     protected $format = 'json';
 
     public function __construct(
@@ -30,22 +30,16 @@ class InmateReleases extends ResourceController
      */
     public function create($inmateId = null)
     {
-        $data = $this->request->getJSON(true);
+        return $this->apiTry(function () use ($inmateId) {
+            $data = $this->request->getJSON(true);
 
-        if (empty($data)) {
-            return $this->respond(ApiResponse::error('No data provided.', 422), 422);
-        }
+            if (empty($data)) {
+                return $this->respond(ApiResponse::error('No data provided.', 422), 422);
+            }
 
-        try {
             $result = $this->releaseInmate->execute((int) $inmateId, $data);
-        } catch (PageNotFoundException $e) {
-            return $this->respond(ApiResponse::error($e->getMessage(), 404), 404);
-        } catch (DomainException $e) {
-            return $this->respond(ApiResponse::error($e->getMessage(), 422), 422);
-        } catch (RuntimeException $e) {
-            return $this->respond(ApiResponse::error($e->getMessage(), 422), 422);
-        }
 
-        return $this->respondCreated(ApiResponse::success($result, 'Inmate released', 201));
+            return $this->respondCreated(ApiResponse::success($result, 'Inmate released', 201));
+        });
     }
 }

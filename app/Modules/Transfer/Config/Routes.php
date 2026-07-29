@@ -7,6 +7,6 @@ $routes->group('api/v1', ['filter' => ['apiAuth', 'orgScope']], static function 
     $routes->post(
         'inmates/(:num)/transfers',
         '\App\Modules\Transfer\Controllers\Api\Transfers::create/$1',
-        ['filter' => 'permission:inmate.write'],
+        ['filter' => 'permission:inmate.transfer'],
     );
 });
