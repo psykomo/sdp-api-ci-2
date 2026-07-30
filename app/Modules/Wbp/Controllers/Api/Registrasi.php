@@ -9,9 +9,9 @@ use CodeIgniter\RESTful\ResourceController;
 use Config\Services;
 
 /**
- * R1 reads + R2 identitas writes on legacy schema.
+ * R3 create, R4 update, R6 list/show registrasi on legacy multi-table spine.
  */
-class Wbp extends ResourceController
+class Registrasi extends ResourceController
 {
     use MapsApiExceptions;
 
@@ -23,6 +23,7 @@ class Wbp extends ResourceController
         $this->service ??= Services::wbpService();
     }
 
+    /** GET /api/v1/wbp/registrasi */
     public function index()
     {
         return $this->apiTry(function () {
@@ -30,7 +31,7 @@ class Wbp extends ResourceController
             $page    = (int) ($this->request->getGet('page') ?: 1);
             $search  = $this->request->getGet('search');
 
-            $result = $this->service->list(
+            $result = $this->service->listRegistrasi(
                 $perPage,
                 $search !== null ? (string) $search : null,
                 $page,
@@ -40,15 +41,17 @@ class Wbp extends ResourceController
         });
     }
 
+    /** GET /api/v1/wbp/registrasi/{id_perkara} */
     public function show($id = null)
     {
         return $this->apiTry(function () use ($id) {
-            $wbp = $this->service->findOrFail((string) $id);
+            $row = $this->service->findRegistrasiOrFail((string) $id);
 
-            return $this->respond(ApiResponse::success($wbp));
+            return $this->respond(ApiResponse::success($row));
         });
     }
 
+    /** POST /api/v1/wbp/registrasi */
     public function create()
     {
         return $this->apiTry(function () {
@@ -57,12 +60,13 @@ class Wbp extends ResourceController
                 return $this->respond(ApiResponse::error('No data provided.', 422), 422);
             }
 
-            $wbp = $this->service->create($data);
+            $result = $this->service->createRegistrasi($data);
 
-            return $this->respondCreated(ApiResponse::success($wbp, 'Identitas created', 201));
+            return $this->respondCreated(ApiResponse::success($result, 'Registrasi created', 201));
         });
     }
 
+    /** PUT/PATCH /api/v1/wbp/registrasi/{id_perkara} */
     public function update($id = null)
     {
         return $this->apiTry(function () use ($id) {
@@ -71,21 +75,9 @@ class Wbp extends ResourceController
                 return $this->respond(ApiResponse::error('No data provided.', 422), 422);
             }
 
-            $wbp = $this->service->update((string) $id, $data);
+            $result = $this->service->updateRegistrasi((string) $id, $data);
 
-            return $this->respond(ApiResponse::success($wbp, 'Identitas updated'));
-        });
-    }
-
-    public function delete($id = null)
-    {
-        return $this->apiTry(function () use ($id) {
-            $this->service->delete((string) $id);
-
-            return $this->respondDeleted(ApiResponse::success(
-                ['nomor_induk' => (string) $id],
-                'Identitas soft-deleted',
-            ));
+            return $this->respond(ApiResponse::success($result, 'Registrasi updated'));
         });
     }
 }

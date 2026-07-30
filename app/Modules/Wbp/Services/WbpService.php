@@ -2,141 +2,148 @@
 
 namespace App\Modules\Wbp\Services;
 
-use App\Exceptions\ValidationException;
-use App\Modules\Wbp\Actions\DaftarWbp;
-use App\Modules\Wbp\Shared\WbpAuditWriter;
-use App\Modules\Wbp\Shared\WbpFinder;
-use App\Modules\Wbp\Models\WbpModel;
+use App\Modules\Wbp\Actions\DaftarIdentitas;
+use App\Modules\Wbp\Actions\HapusIdentitas;
+use App\Modules\Wbp\Actions\RegistrasiBaru;
+use App\Modules\Wbp\Actions\UbahIdentitas;
+use App\Modules\Wbp\Actions\UbahRegistrasi;
 use App\Services\OrgContext;
-use App\Services\UnitOfWork;
 use DomainException;
-use RuntimeException;
 
 /**
- * Facade / composition root for the Wbp module.
- *
- * Public surface for controllers and other modules. Reads go through
- * WbpQueryService; multi-step writes may live in Actions and still be
- * reachable here when other modules need them.
+ * Wbp facade — R1/R2 identitas, R3 create + R4 edit registrasi, R6 list/show.
  */
 class WbpService
 {
-    protected WbpModel $inmates;
-
-    protected OrgContext $orgContext;
-
-    protected UnitOfWork $unitOfWork;
-
     protected WbpQueryService $query;
 
-    protected WbpFinder $finder;
+    protected DaftarIdentitas $daftar;
 
-    protected DaftarWbp $register;
+    protected UbahIdentitas $ubah;
 
-    protected WbpAuditWriter $auditWriter;
+    protected HapusIdentitas $hapus;
+
+    protected RegistrasiBaru $registrasiBaru;
+
+    protected UbahRegistrasi $ubahRegistrasi;
 
     public function __construct(
-        ?WbpModel $inmates = null,
-        ?OrgContext $orgContext = null,
-        ?UnitOfWork $unitOfWork = null,
+        protected ?OrgContext $orgContext = null,
+        ?WbpQueryService $query = null,
+        ?DaftarIdentitas $daftar = null,
+        ?UbahIdentitas $ubah = null,
+        ?HapusIdentitas $hapus = null,
+        ?RegistrasiBaru $registrasiBaru = null,
+        ?UbahRegistrasi $ubahRegistrasi = null,
     ) {
-        $this->inmates     = $inmates ?? new WbpModel();
-        $this->orgContext  = $orgContext ?? service('orgContext');
-        $this->unitOfWork  = $unitOfWork ?? service('unitOfWork');
-        $this->finder      = new WbpFinder($this->inmates, $this->orgContext);
-        $this->auditWriter = new WbpAuditWriter(orgContext: $this->orgContext);
-        $this->query       = new WbpQueryService($this->inmates, $this->orgContext, $this->finder);
-        $this->register    = new DaftarWbp($this->inmates, $this->auditWriter, $this->orgContext, $this->unitOfWork);
+        $this->orgContext ??= service('orgContext');
+        $this->query  = $query ?? new WbpQueryService(orgContext: $this->orgContext);
+        $this->daftar = $daftar ?? new DaftarIdentitas(orgContext: $this->orgContext, query: $this->query);
+        $this->ubah   = $ubah ?? new UbahIdentitas(orgContext: $this->orgContext, query: $this->query);
+        $this->hapus  = $hapus ?? new HapusIdentitas(orgContext: $this->orgContext, query: $this->query);
+        $this->registrasiBaru = $registrasiBaru ?? new RegistrasiBaru(
+            orgContext: $this->orgContext,
+            query: $this->query,
+        );
+        $this->ubahRegistrasi = $ubahRegistrasi ?? new UbahRegistrasi(
+            orgContext: $this->orgContext,
+            query: $this->query,
+        );
     }
 
     /**
      * @return array{items: list<mixed>, meta: array<string, int>}
      */
-    public function list(int $perPage = 10, ?string $search = null): array
+    public function list(int $perPage = 10, ?string $search = null, int $page = 1): array
     {
-        return $this->query->list($perPage, $search);
-    }
-
-    public function findOrFail(int|string $id): object
-    {
-        return $this->query->findOrFail($id);
+        return $this->query->list($perPage, $search, $page);
     }
 
     /**
-     * Register a new inmate — delegates to the DaftarWbp action.
+     * @return array<string, mixed>
+     */
+    public function findOrFail(int|string $id): array
+    {
+        return $this->query->findOrFail((string) $id);
+    }
+
+    /**
+     * R2 create identitas.
      *
      * @param array<string, mixed> $data
+     * @return array<string, mixed>
      */
-    public function create(array $data): object
+    public function create(array $data): array
     {
-        return $this->register->execute($data);
+        return $this->daftar->execute($data);
     }
 
     /**
+     * R2 update identitas.
+     *
      * @param array<string, mixed> $data
+     * @return array<string, mixed>
      */
-    public function update(int|string $id, array $data): object
+    public function update(int|string $id, array $data): array
     {
-        $this->findOrFail($id);
-
-        unset($data['organization_id']);
-
-        return $this->unitOfWork->run(function () use ($id, $data): object {
-            if ($this->inmates->update($id, $data) === false) {
-                throw new ValidationException(
-                    'Validation failed.',
-                    $this->inmates->errors(),
-                );
-            }
-
-            $this->auditWriter->record('wbp.updated', (int) $id);
-
-            $inmate = $this->inmates->find($id);
-            if ($inmate === null) {
-                throw new RuntimeException('Updated inmate could not be reloaded.');
-            }
-
-            return $inmate;
-        });
+        return $this->ubah->execute((string) $id, $data);
     }
 
+    /**
+     * R2 soft-delete identitas (IS_DELETED=1). Blocked if active perkara exist.
+     */
     public function delete(int|string $id): void
     {
-        $this->findOrFail($id);
-
-        $this->unitOfWork->run(function () use ($id): void {
-            $this->inmates->delete($id);
-            $this->auditWriter->record('wbp.deleted', (int) $id);
-        });
+        $this->hapus->execute((string) $id);
     }
 
     /**
-     * Module-local process that may also run inside MutasiService's UnitOfWork.
+     * R3 multi-table registrasi create.
      *
-     * Alone  → starts and commits its own transaction.
-     * Nested → joins the outer transfer transaction; no early commit.
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
      */
-    public function transferOwnership(int $id, int $toOrganizationId): object
+    public function createRegistrasi(array $data): array
     {
-        return $this->unitOfWork->run(function () use ($id, $toOrganizationId): object {
-            $this->findOrFail($id);
+        return $this->registrasiBaru->execute($data);
+    }
 
-            if ($this->inmates->update($id, [
-                'organization_id' => $toOrganizationId,
-                'status'          => 'active',
-            ]) === false) {
-                throw new ValidationException(
-                    'Unable to transfer inmate.',
-                    $this->inmates->errors(),
-                );
-            }
+    /**
+     * R4 update registrasi (perkara + optional kejahatan/hukuman + history append).
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function updateRegistrasi(string $idPerkara, array $data): array
+    {
+        return $this->ubahRegistrasi->execute($idPerkara, $data);
+    }
 
-            $inmate = $this->inmates->find($id);
-            if ($inmate === null) {
-                throw new RuntimeException('Transferred inmate could not be reloaded.');
-            }
+    /**
+     * R6 list active registrasi (perkara).
+     *
+     * @return array{items: list<mixed>, meta: array<string, int>}
+     */
+    public function listRegistrasi(int $perPage = 10, ?string $search = null, int $page = 1): array
+    {
+        return $this->query->listRegistrasi($perPage, $search, $page);
+    }
 
-            return $inmate;
-        });
+    /**
+     * R6/R4 show one registrasi by ID_PERKARA.
+     *
+     * @return array<string, mixed>
+     */
+    public function findRegistrasiOrFail(string $idPerkara): array
+    {
+        return $this->query->findRegistrasiOrFail($idPerkara);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function transferOwnership(int|string $id, array $data): object
+    {
+        throw new DomainException('Legacy mutasi UPT (M2) is not implemented yet.');
     }
 }

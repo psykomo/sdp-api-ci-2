@@ -7,7 +7,7 @@
 | **Date** | 2026-07-29 |
 | **Status** | Draft (rev 3 — shared DB + legacy→API strangler) |
 | **Audience** | Senior engineers, tech leads, product owners (Ditjenpas / SDP program) |
-| **Source (legacy)** | `/Users/hap/Downloads/HTDOCS SDP` — CodeIgniter 2.1.3, app **3.6.2**, sample UPT Lapas Kelas I Cipinang |
+| **Source (legacy)** | **Canonical:** `/Users/hap/Documents/dev/sdp/102sdp` — focus `sdp/` + `system/` (CI **2.1.3**, Git `staging` @ 2026-07-28). **DB dump:** `102sdp/db_sdp_new_30072026.sql` (MariaDB `db_sdp`, ~454 tables). Older UPT dump `HTDOCS SDP` is reference-only. |
 | **Target (new)** | `/Users/hap/Documents/dev/sdp/sdp-api-ci-2` — CodeIgniter 4 modular IMS API |
 | **House style** | [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) (modules, thin controllers, services) — **data layer adapted for shared legacy schema** |
 | **Module names** | Indonesian — [`docs/MODULE_NAMING.md`](./MODULE_NAMING.md) (`Wbp`, `Kunjungan`, `Mutasi`, …) |
@@ -265,84 +265,213 @@ Legacy concepts → modules (logic ownership; **tables stay legacy names**):
 
 | Legacy | Module (ID) | Tables (examples) | Wave |
 |--------|-------------|-------------------|------|
-| Identitas, registrasi, portir | **Wbp** | `identitas`, registrasi-related | 1 |
-| Perkara, hukuman, kejahatan, grasi data | **Perkara** | `perkara`, `hukuman`, `kejahatan`, … | 2 |
-| Kunjungan | **Kunjungan** | `kunjungan`, `kunjungan_*` | 1 |
-| Mutasi UPT/sel | **Mutasi** (+ **Fasilitas**) | `mutasi_*`, blok/sel | 2 |
-| Remisi / integrasi / PB | **Remisi** (+ **Integrasi** if split) | `remisi`, related | 3–4 |
-| Keswat / obat / bama | **Keswat** | `keswat_*`, bama | 4+ |
-| Parameter / referensi | **Referensi** | `daftar_referensi`, parameter tables | 0–1 |
-| Laporan / DWH | **Laporan** | reads operational + optional DWH | 5 |
-| Bapas / Rupbasan / biometric | Deferred (**Bapas**, **Rupbasan**, **Biometrik**) | … | 6+ |
+| Parameter / referensi | **Referensi** | `daftar_referensi`, `jenis_registrasi`, parameter\* | **0–1** (plumbing + lookups for registrasi) |
+| Identitas + **registrasi** (full L2 epic) | **Wbp** (+ **Perkara** for perkara/hukuman/kejahatan) | `identitas`, `perkara`, `history_registrasi`, `kejahatan`, `hukuman`, … | **1–3 (primary goal)** |
+| Blok / kamar / penempatan | **Fasilitas** | blok, kamar, … | **2–3** (as needed by registrasi/placement) |
+| Remisi | **Remisi** | `remisi`, related | **4** (after full registrasi L2) |
+| Integrasi / PB / asimilasi | **Integrasi** (or under Remisi) | integrasi tables | **5** |
+| Mutasi golongan + UPT/sel | **Mutasi** | `mutasi_golongan`, `mutasi_upt*`, … | **Now with registrasi epic (M1–M2)** — not deferred after Remisi |
+| Keswat / obat / bama | **Keswat** | `keswat_*`, bama | **6** |
+| Laporan / DWH | **Laporan** | reads | **6** |
+| Kunjungan | **Kunjungan** | `kunjungan*` | **7 (late)** |
+| Bapas / Rupbasan / biometric hardware | Deferred | … | **8+** |
 
 Full naming rules: [`MODULE_NAMING.md`](./MODULE_NAMING.md).
 
-Dependency DAG (logic): `Referensi → Wbp → {Kunjungan, Keswat, Perkara, Remisi} → Mutasi/Laporan`.
+**Product priority (rev 3.2):**
+
+1. **Primary goal:** **Wbp / registrasi fully at L2** — legacy registrasi screens call the CI4 API; API owns all writes for the registrasi process family on the shared DB.
+2. **Kunjungan late** (after registrasi and later domains).
+3. Remisi/integrasi **after** registrasi L2 is complete (need stable perkara/hukuman/history).
+
+Dependency DAG: `Referensi → Wbp ⇄ Perkara (registrasi commands) → Remisi → … → Kunjungan (late)`.  
+During the registrasi epic, **Perkara is not optional** — registrasi always creates/updates perkara, kejahatan, hukuman, history. Prefer **orchestration Actions under Wbp** that call **Perkara** facade (or a dedicated `RegistrasiService` in Wbp that owns the UnitOfWork and uses Perkara models only via Perkara module).
+
+---
+
+## Epic: Wbp / Registrasi full L2
+
+### Inventory (entrypoint map)
+
+Canonical process map (controllers → R-slices → tables → API drafts):
+
+**[`docs/migration/REGISTRASI_INVENTORY.md`](./migration/REGISTRASI_INVENTORY.md)** — built from `102sdp` + live `db_sdp`.  
+
+Schema / PK / column contract for pilot tables:
+
+**[`docs/migration/SCHEMA_CONTRACT.md`](./migration/SCHEMA_CONTRACT.md)** — from OrbStack `db_sdp`.
+
+### Goal
+
+When this epic exits, **all production registrasi write paths used by UPT** are:
+
+- Implemented in CI4 (**Wbp** + **Perkara** modules),
+- Covered by feature tests,
+- Reached from legacy via **HTTP L2** (single writer = API),
+- Rollback-capable via legacy feature switches.
+
+Legacy controllers (`Registrasi.php`, `ManajemenRegistrasi.php`, `ManajemenIdentitas.php`, `AddIdentitas.php`, `HistoryRegistrasi.php`, …) become thin proxies for those paths.
+
+### Legacy gravity (approx.)
+
+| Artifact | ~LOC | Role |
+|----------|-----:|------|
+| `controllers/Registrasi.php` | 3 077 | Create/edit registrasi, perkara forms, simpan, mutasi-in-reg UI |
+| `controllers/ManajemenRegistrasi.php` | 2 992 | Management / search / ops |
+| `controllers/ManajemenIdentitas.php` | 1 894 | Identitas management |
+| `controllers/HistoryRegistrasi.php` | 2 106 | History views / ops |
+| `controllers/AddIdentitas.php` | 987 | Add identitas |
+| `libraries/Lib_identitas.php` | 547 | get/set identitas, perkara list |
+| `libraries/lib_perkara.php` | 910 | Perkara helpers |
+| `libraries/Lib_registrasi.php` | 490 | Mostly external party APIs (not full UI registrasi) |
+
+Do **not** paste these files. Extract **process cards** + characterization fixtures.
+
+### In scope (must be L2 for “full registrasi”)
+
+Treat as one product epic with **slice delivery**, but **exit only when all in-scope slices are L2**.
+
+| Slice ID | Process | Primary tables | API shape (illustrative) |
+|----------|---------|----------------|---------------------------|
+| **R0** | Lookups for forms | `jenis_registrasi`, `daftar_referensi`, instansi, dati2, … | `GET /api/v1/referensi/...` |
+| **R1** | Search / show identitas | `identitas` | `GET /api/v1/wbp`, `GET /api/v1/wbp/{nomor_induk}` |
+| **R2** | Create / update identitas | `identitas` (+ attribute history if used) | `POST/PUT /api/v1/wbp` |
+| **R3** | Registrasi baru **+ RegistrasiMAP variant** | `identitas`, `perkara`, `kejahatan`, `hukuman*`, `history_registrasi`, … | `POST /api/v1/wbp/registrasi` (**one command**, one `UnitOfWork`; MAP branches in same family) |
+| **R4** | Edit registrasi / perkara on existing WBP | same | `PUT /api/v1/wbp/registrasi/{id_perkara}` |
+| **R5** | History registrasi read + **write (full parity with R4)** | `history_registrasi` | GET + update history APIs |
+| **R6** | Manajemen list/search registrasi (read) | joins identitas/perkara | `GET /api/v1/wbp/registrasi` |
+| **R7** | Jenis registrasi / golongan master (if UPT-writable) | `jenis_registrasi` | under Referensi or Wbp admin |
+| **R8** | Documents in reg flow | dokumen | **Waived for pilot DoD** (K25) |
+| **M1** | Mutasi golongan | `mutasi_golongan`, perkara/history | Mutasi module `POST /api/v1/mutasi/golongan` **now** |
+| **M2** | Mutasi UPT package | `mutasi_upt*` | Mutasi module **after** M1 + R3/R4 |
+
+**Hard rule:** multi-table create/edit (R3/R4/R5 write) is **one API request** owning the full transaction — legacy must not half-write locally then call API.
+
+### Out of scope for pilot DoD (explicit)
+
+| Item | Where it goes |
+|------|----------------|
+| **R8 dokumen** | Waiver — later slice |
+| **sidik_jari / usertbl** on identitas delete | Deferred |
+| **Portir** | Out of this epic |
+| **Kunjungan** | Wave 7 late |
+| **Remisi / integrasi apply** | After reg + M1 |
+| **Biometric** / party REST / Bapas / Rupbasan | Deferred |
+| Full **PDF/surat** | Later |
+| **M2 Mutasi UPT** | After M1 + R3/R4 (not pilot-blocking) |
+
+### Module split inside the epic
+
+```text
+Wbp (grown)
+  Actions/DaftarWbp.php          # identitas only if needed
+  Actions/RegistrasiBaru.php     # R3 — UnitOfWork
+  Actions/UbahRegistrasi.php     # R4
+  Services/WbpService.php        # facade
+  Services/WbpQueryService.php   # R1, R5, R6 reads
+  Models → identitas, …
+
+Perkara
+  Services/PerkaraService.php    # create/update perkara, kejahatan, hukuman
+  Models → perkara, kejahatan, hukuman, history_registrasi (or shared)
+
+Referensi
+  jenis_registrasi, daftar_referensi, …  # R0, R7
+```
+
+Cross-module: `RegistrasiBaru` may call `PerkaraService` **inside** outer `UnitOfWork` (nest-safe). No cycles: Perkara must not call Wbp registrasi actions.
+
+### Delivery slices (still “full L2” at the end)
+
+Build **incrementally**, flip L2 **per slice**, but epic **Definition of Done** = all in-scope slices L2 on pilot UPT.
+
+| Phase | Slices | L2 flips |
+|-------|--------|----------|
+| Plumbing | R0 (+ proxy kit) | Optional small Referensi L2 **or** read-only R0 first |
+| Read spine | R1, R6, R5 | Can stay L1 (API-only clients) until writes ready; or L2 if legacy list screens proxy |
+| Write spine | R2 → R3 → R4 | **Must** L2; R3 is the critical path |
+| Closeout | R5 write parity, R7 as needed, M1 L2; residual identitas paths | Pilot menus proxied; R8 waived |
+
+### Epic exit criteria (Definition of Done)
+
+- [ ] Capability inventory lists every in-scope legacy entrypoint → API command; none left on local write for pilot UPT.
+- [ ] R3/R4 feature tests: multi-table assert (identitas + perkara + kejahatan + hukuman + history) + rollback on mid-failure.
+- [ ] Characterization fixtures from anonymized staging clone for at least N happy-path + edge golongan/jenis_reg.
+- [ ] Legacy switches on for R2–R4; dual-writer incidents = 0.
+- [ ] Audit: actor + via=legacy-proxy + id_perkara / nomor_induk.
+- [ ] Runbook: freeze optional only if needed; rollback per-slice switches.
+- [ ] Explicit **out-of-scope** list signed (biometric, mutasi UPT, party APIs, kunjungan).
+
+### Risks specific to full registrasi L2
+
+| Risk | Mitigation |
+|------|------------|
+| God-action R3 too large | Split validation DTOs; keep one UnitOfWork; sub-builders inside Action |
+| Hidden side writes (sidik_jari, usertbl, exchange) | Inventory during R3 TD spike; include or explicitly exclude |
+| Jenis registrasi / tahanan vs narapidana branches | Table-driven rules + fixtures per `ID_REG` family |
+| Edit path diverges from create | Shared domain builders; separate Action entrypoints |
+| Legacy wizard multi-step | Collapse to one API command or API-side draft status if legacy already has draft |
+
+---
+
+## Suggested migration order (priority ladder)
+
+| Priority | Slice | Notes |
+|----------|--------|--------|
+| **P0** | Foundation (Wave 0) | Auth, proxy, inventory focused on **registrasi** entrypoints |
+| **P1** | Referensi R0 | Lookups required by registrasi forms |
+| **P2** | Wbp/Perkara **read** R1, R5, R6 | Search identitas & registrasi lists |
+| **P3** | **Registrasi full L2** R2→R3 (incl. MAP)→R4→R5 write parity→R6 (+ R7) | Primary goal; R8 waived |
+| **P3b** | **Mutasi now** — M1 golongan; **M2 after** M1+R3/R4 | Mutasi module; reg UI L2-calls Mutasi for golongan |
+| **P4** | Fasilitas (if needed for placement / mutasi sel) | Parallel with Mutasi as needed |
+| **P5** | Remisi | After registrasi + mutasi-golongan L2 stable |
+| **P6** | Integrasi | |
+| **P7** | Keswat / Laporan | |
+| **P8** | **Kunjungan (late)** | |
+| **P9** | Deferred | Biometric, Bapas, Rupbasan, party exchange APIs |
+
+**Plumbing-first option:** a tiny Referensi L2 can still ship before R3 to prove the proxy stack, but it is **not** a substitute for full registrasi L2.
 
 ---
 
 ## Phased Roadmap
 
-### Wave 0 — Shared-DB foundation & proxy kit (3–5 weeks)
+### Wave 0 — Foundation for registrasi epic (3–5 weeks)
 
-**Scope:**
+- Inventory **all** registrasi-related controllers/methods → slice map (R0–R8).
+- Schema contract: `identitas`, `perkara`, `kejahatan`, `hukuman*`, `history_registrasi`, `jenis_registrasi`.
+- Auth bridge + legacy `Sdp_api_client` + switches.
+- TD spike: walk one full `Registrasi::simpan` / `insert` path; list every table touched.
 
-- Capability inventory (controller/lib → process → module → state L0–L3).
-- **Schema contract pack:** document primary tables/PKs/soft-delete columns for pilot processes (no redesign).
-- Rebase decision: stop greenfield domain migrations; plan model rewrite.
-- Auth bridge: service token + on-behalf-of + OrgContext from `ID_UPT`.
-- **Legacy API client kit:** thin CI2 library (wrap existing `Curl`) + config base URL, timeouts, idempotency, error mapping to flash/JSON.
-- Feature switch convention in legacy config/preferences.
-- Staging: both apps → same DB clone.
-- Secrets hygiene: env-only credentials; rotate sample install passwords.
+**Exit:** ping + inventory + schema pack + side-write list for R3.
 
-**Exit criteria:**
+### Wave 1 — Referensi R0 + Wbp/Perkara reads (R1, R5, R6) (4–8 weeks)
 
-- [ ] Inventory ≥90% controllers clustered.
-- [ ] One health path: legacy can call `GET /api/v1/ping` (or equivalent) with service auth.
-- [ ] Documented mapping: session user + `ID_UPT` → API context.
-- [ ] No production routing yet; no domain schema changes.
+- Models on legacy tables; query APIs; feature tests.
+- Optional: first micro L2 on one Referensi write to prove proxy.
 
-### Wave 1 — First routed capability + Wbp/Kunjungan on legacy tables (6–10 weeks)
+**Exit:** API can power registrasi form lookups and search/show without greenfield `inmates` tables.
 
-**Recommended first route:** a **narrow, low-risk write** (e.g. catat kunjungan **or** a small Referensi write) to prove L2 — not remisi.
+### Wave 2–3 — **Registrasi full L2** (primary) (12–20 weeks)
 
-**Scope:**
+- **R2** identitas write L2.
+- **R3** `POST .../registrasi` command (full multi-table) L2 — characterization + feature tests.
+- **R4** edit registrasi L2.
+- **R7/R8** as required for UPT production path.
+- Legacy proxies on `Registrasi`, `ManajemenRegistrasi`, `ManajemenIdentitas`, `AddIdentitas`, history screens for in-scope actions.
+- Fasilitas only if blocking.
 
-- CI4 models for `identitas` + `kunjungan` (exact structure) under modules **Wbp** / **Kunjungan**.
-- Wbp read/search + Kunjungan CRUD services on shared DB.
-- Feature tests with **legacy-shaped** fixtures (not greenfield `inmates`).
-- Legacy proxy for chosen process at pilot UPT (L2).
-- Rollback drill: switch off → local path works.
+**Exit:** epic DoD above (full in-scope registrasi L2 on pilot UPT).
 
-**Exit criteria:**
+### Wave 4 — Remisi (after registrasi L2)
 
-- [ ] L2 live for pilot process on staging; soak metrics (latency, error rate, double-submit).
-- [ ] Feature tests green for API process.
-- [ ] Zero dual-writer incidents (monitoring: only API touches those tables during routed actions).
-- [ ] Audit shows actor + via=legacy-proxy.
+### Wave 5 — Integrasi + Mutasi UPT
 
-### Wave 2 — Perkara depth + more L2 routes (8–12 weeks)
+### Wave 6 — Keswat + Laporan
 
-- **Perkara** on `perkara` / `hukuman` / …  
-- Timeline hukuman from real columns for remisi later.  
-- **Mutasi** / **Fasilitas** on mutasi/blok tables as needed.  
-- Additional L2 routes (registrasi steps that can be whole-API commands).
+### Wave 7 — Kunjungan (late)
 
-**Exit criteria:** hukuman readable; no remisi apply without Perkara depth; more processes at L2 with switches.
-
-### Wave 3 — Remisi policies on real tables (10–14 weeks)
-
-- Characterization fixtures from shared DB.  
-- Policy packages; usulan lifecycle on existing remisi tables.  
-- L2 for validate/usulan before apply.  
-- Apply only when entire write set is API-owned.
-
-### Wave 4+ — Integrasi, Keswat, Laporan, retire local paths (L3)
-
-- Expand L2 coverage; remove dead local code paths after soak.  
-- Optional SPA direct-to-API (L3).  
-- Deferred domains as needed.
+### Wave 8+ — Deferred (biometric, Bapas, Rupbasan, party APIs, full surat)
 
 ---
 
@@ -521,20 +650,29 @@ if ($this->config->item('api_route_kunjungan')) {
 | K14 | Defer biometric, full surat, Bapas, Rupbasan | Focus |
 | K15 | Pilot = one UPT DB, both apps configured to it | Matches install model |
 | K16 | **Indonesian module names** (`Wbp`, `Kunjungan`, `Mutasi`, `Remisi`, `Perkara`, `Keswat`, `Fasilitas`, `Referensi`, `Laporan`) | Domain language matches SDP/legacy; see [`MODULE_NAMING.md`](./MODULE_NAMING.md) |
+| K17 | **Kunjungan migrates late** — after registrasi epic and later domains | Visits stay on legacy longer |
+| K18 | **Primary migration goal = Wbp/registrasi L2** (R0–R7 + MAP as R3; R5 write parity; R8 waived) + **M1 Mutasi** | Product pilot DoD — see inventory §10 |
+| K19 | Multi-table registrasi create/edit = **single API command + UnitOfWork** | HTTP cannot share legacy transactions |
+| K20 | Perkara (perkara/kejahatan/hukuman/history) is **in** the registrasi epic via Perkara facade | Registrasi is not identitas-only |
+| K21 | Out of near-term epic: biometric, party exchange APIs, kunjungan, remisi (until after reg+mutasi) | Keep finishable |
+| K22 | **Mutasi domain now** — M1 mutasi golongan in Mutasi module (not buried in R4 DTO). **M2 mutasi UPT follows M1 + R3/R4** | Product: golongan with reg UI; UPT package next |
+| K23 | **RegistrasiMAP = R3 variant now** | Same create command family as core registrasi |
+| K24 | **HistoryRegistrasi write = full parity with R4** | Not read-only R5 first |
+| K25 | **R8 dokumen waived** for pilot DoD; **sidik_jari/usertbl delete deferred**; **Portir out** | Keep pilot finishable |
 
 ---
 
 ## Open Questions
 
-1. ~~**API auth storage**~~ — **Decided:** additive `api_tokens` (and API-side RBAC as needed) with actors **mapped to legacy `pengguna` / NIP**. Domain tables remain legacy-only.
-2. **First L2 process:** catat **kunjungan** vs a smaller **Referensi** write vs a read-only API first? _(Open — decide before PR-11)_
-3. **Password / user sync:** API users 1:1 with `pengguna`?  
-4. **Deployment topology:** API colocated on same UPT host vs central API farm calling UPT DBs?  
-5. **Kanwil app:** same dual-code pattern or later?  
-6. **OpenAPI:** Markdown through Wave 2 (prior preference) vs early OpenAPI?  
-7. **Existing greenfield migrations:** delete vs keep for isolated unit demos only?
+Remaining (not blocking registrasi + M1 pilot):
 
-### Resolved product inputs (rev 3)
+1. **Password / user sync:** API users 1:1 with `pengguna`?
+2. **Deployment topology:** API colocated on UPT host vs central farm?
+3. **Kanwil app:** same dual-code pattern or later?
+4. **OpenAPI:** Markdown through registrasi epic vs early OpenAPI?
+5. **Existing greenfield migrations:** delete vs keep for isolated demos only?
+
+### Resolved product inputs (rev 3.3)
 
 | Topic | Decision |
 |-------|----------|
@@ -543,14 +681,21 @@ if ($this->config->item('api_route_kunjungan')) {
 | Transition | Two codebases, one DB |
 | Strangler | Legacy HTTP → new API |
 | API auth tables | Additive tokens; map to `pengguna` |
-| Module names | Indonesian (`Wbp`, `Kunjungan`, …) — [`MODULE_NAMING.md`](./MODULE_NAMING.md) |
+| Module names | Indonesian — [`MODULE_NAMING.md`](./MODULE_NAMING.md) |
+| Kunjungan | Late |
+| Primary pilot | R0–R7 + RegistrasiMAP as R3; R5 write = R4 parity; **M1 Mutasi now**; **M2 after** M1+R3/R4 |
+| R8 dokumen | **Waiver** |
+| sidik_jari/usertbl delete | **Defer** |
+| Portir | **Out** |
+| Registrasi transaction | One API command + UnitOfWork (R3/R4/R5 write) |
+| Inventory | [`docs/migration/REGISTRASI_INVENTORY.md`](./migration/REGISTRASI_INVENTORY.md) §10 |
 
 ---
 
 ## References
 
 - Target: `docs/ARCHITECTURE.md`, `app/Modules/*`, `app/Services/*`, `tests/_support/Feature/ApiFeatureTestCase.php`
-- Legacy: `MY_Controller.php`, `libraries/Curl.php`, `libraries/Lib_*`, `models/*_model.php`, `controllers/api/*`, `config/database.php` (**sensitive**)
+- Legacy canonical: `/Users/hap/Documents/dev/sdp/102sdp` — `system/application/{controllers,models,libraries,config}`, web root `sdp/`; SQL evolution in `querybox/`; schema+seed dump `db_sdp_new_30072026.sql`. Local OrbStack MariaDB: container `sdp-mariadb` on **127.0.0.1:3307**, DB `db_sdp` (see `102sdp/docs/LOCAL_DEV_DB.md`). CI4 `sdp-api-ci-2` `.env` `database.default.*` points at the same instance (shared schema). **Do not** run greenfield `php spark migrate` against `db_sdp` until migrations are redesigned for legacy tables.
 
 ---
 
@@ -563,9 +708,9 @@ if ($this->config->item('api_route_kunjungan')) {
 
 | Window | Focus |
 |--------|--------|
-| **Month 1** | PR-01 … PR-10 — foundation, rebase, auth bridge, client kit, first models/tests |
-| **Month 2** | PR-11 … PR-15 — first L2 route, more tables, Legal start |
-| **Month 3+** | Remission characterization + policies; more L2 routes |
+| **Month 1** | Foundation + schema pack for registrasi tables + proxy kit + R0/R1 reads |
+| **Month 2–5** | Registrasi R2→R3(+MAP)→R4→R5 write→R6; **M1 Mutasi golongan**; then **M2 UPT** |
+| **Month 6+** | Remisi → Integrasi → Keswat/Laporan → **Kunjungan late** |
 
 ---
 
@@ -627,21 +772,22 @@ if ($this->config->item('api_route_kunjungan')) {
 | **Depends on** | PR-05 contract |
 | **Description** | Lives in legacy codebase; this repo holds the integration contract doc + example. |
 
-### PR-08 — Rename modules to Indonesian + rebase Wbp onto `identitas` (read path)
+### PR-08 — Wbp + Perkara models on legacy tables (read)
 
 | | |
 |--|--|
-| **Title** | `refactor+feat(Wbp): Indonesian module name + legacy identitas models` |
-| **Files** | `Inmate` → `Wbp` rename; Model `$table='identitas'`; `WbpService` / routes `/api/v1/wbp`; Autoload + Services; feature tests |
-| **Depends on** | PR-04, [`MODULE_NAMING.md`](./MODULE_NAMING.md) |
+| **Title** | `feat(Wbp/Perkara): identitas + perkara read models on legacy schema` |
+| **Files** | Models for `identitas`, `perkara`, …; R1/R6 query APIs; feature tests |
+| **Depends on** | PR-04 |
 
-### PR-09 — Rename + rebase Kunjungan onto `kunjungan`
+### PR-09 — Referensi lookups for registrasi forms (R0)
 
 | | |
 |--|--|
-| **Title** | `refactor+feat(Kunjungan): Indonesian module + legacy kunjungan tables` |
-| **Files** | `Visit` → `Kunjungan`; `KunjunganService`; `/api/v1/kunjungan`; tests |
-| **Depends on** | PR-08 (Wbp scope) |
+| **Title** | `feat(Referensi): jenis_registrasi + daftar_referensi reads` |
+| **Files** | Referensi module; `/api/v1/referensi/...` |
+| **Depends on** | PR-04 |
+| **Description** | Unblocks registrasi form data (R0). |
 
 ### PR-10 — Legacy-shaped test fixtures harness
 
@@ -651,14 +797,31 @@ if ($this->config->item('api_route_kunjungan')) {
 | **Files** | `tests/_support/*`, sample SQL/JSON seeds for identitas/kunjungan |
 | **Depends on** | PR-04 |
 
-### PR-11 — First L2 end-to-end on staging (chosen process)
+### PR-11 — Optional micro-L2 (proxy proof) or jump to R2
 
 | | |
 |--|--|
-| **Title** | `feat: first legacy→API routed process (pilot)` |
-| **Files** | API endpoint polish + legacy switch wiring + runbook |
+| **Title** | `feat: first legacy→API L2 (Referensi micro **or** identitas write R2)` |
+| **Files** | Proxy + switch + one write path |
 | **Depends on** | PR-05–PR-10, PR-07 |
-| **Description** | Prove proxy, idempotency, rollback. |
+| **Description** | Prefer shortest path to prove proxy, then focus on R3. |
+
+### PR-11b — RegistrasiBaru command (R3) + characterization
+
+| | |
+|--|--|
+| **Title** | `feat(Wbp): POST registrasi multi-table command (R3)` |
+| **Files** | `Actions/RegistrasiBaru.php`, Perkara facade, fixtures, feature tests |
+| **Depends on** | PR-08, PR-09, UnitOfWork, auth |
+| **Description** | Core of full registrasi L2; single UnitOfWork. |
+
+### PR-11c — UbahRegistrasi (R4) + legacy proxy for Registrasi.php
+
+| | |
+|--|--|
+| **Title** | `feat(Wbp): PUT registrasi + legacy L2 proxy for create/edit` |
+| **Files** | `Actions/UbahRegistrasi.php`, legacy switches on Registrasi controllers |
+| **Depends on** | PR-11b |
 
 ### PR-12 — Observability + audit via=legacy-proxy
 

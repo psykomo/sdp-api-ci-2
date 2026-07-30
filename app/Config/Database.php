@@ -7,9 +7,14 @@ use CodeIgniter\Database\Config;
 /**
  * Database Configuration
  *
- * Local development  → SQLite3  (group: default)
- * Production         → MariaDB  (group: mariadb, selected when ENVIRONMENT=production)
- * Tests              → in-memory SQLite3 (group: tests)
+ * Development (typical) → MariaDB legacy `db_sdp` via .env (group: default)
+ * Optional local        → SQLite3 file (set database.default.DBDriver=SQLite3 in .env)
+ * Production            → MariaDB group when ENVIRONMENT=production (if defaultGroup not set)
+ * Tests                 → in-memory SQLite3 (group: tests)
+ *
+ * Shared-schema migration: default points at the same DB as 102sdp CI2
+ * (OrbStack: 127.0.0.1:3307). Do not run greenfield `spark migrate` on it
+ * unless you intend to alter that database.
  */
 class Database extends Config
 {
@@ -44,31 +49,29 @@ class Database extends Config
     public array $tenants = [];
 
     /**
-     * Local SQLite3 connection (development default).
+     * Default connection. Overridden by .env (preferred: MySQLi → legacy db_sdp).
+     * Falls back to local SQLite file if .env does not set a driver.
      *
      * @var array<string, mixed>
      */
     public array $default = [
         'DSN'          => '',
-        'hostname'     => '',
-        'username'     => '',
-        'password'     => '',
-        'database'     => WRITEPATH . 'db' . DIRECTORY_SEPARATOR . 'sdp_api.sqlite',
-        'DBDriver'     => 'SQLite3',
+        'hostname'     => '127.0.0.1',
+        'username'     => 'sdp',
+        'password'     => 'sdp_local',
+        'database'     => 'db_sdp',
+        'DBDriver'     => 'MySQLi',
         'DBPrefix'     => '',
         'pConnect'     => false,
         'DBDebug'      => true,
-        'charset'      => 'utf8',
-        'DBCollat'     => '',
+        'charset'      => 'utf8mb4',
+        'DBCollat'     => 'utf8mb4_general_ci',
         'swapPre'      => '',
         'encrypt'      => false,
         'compress'     => false,
-        'strictOn'     => true,
+        'strictOn'     => false,
         'failover'     => [],
-        'port'         => 0,
-        'foreignKeys'  => true,
-        'busyTimeout'  => 5000,
-        'synchronous'  => null,
+        'port'         => 3307,
         'numberNative' => false,
         'foundRows'    => false,
         'dateFormat'   => [
@@ -79,32 +82,29 @@ class Database extends Config
     ];
 
     /**
-     * MariaDB / MySQL production connection.
-     *
-     * Selected automatically when CI_ENVIRONMENT=production.
-     * Override credentials via .env:
-     *   database.mariadb.hostname / database / username / password / port
+     * Named MariaDB group (same target as default in local shared-schema setup).
+     * Override via .env: database.mariadb.*
      *
      * @var array<string, mixed>
      */
     public array $mariadb = [
         'DSN'          => '',
         'hostname'     => '127.0.0.1',
-        'username'     => '',
-        'password'     => '',
-        'database'     => 'sdp_api',
+        'username'     => 'sdp',
+        'password'     => 'sdp_local',
+        'database'     => 'db_sdp',
         'DBDriver'     => 'MySQLi',
         'DBPrefix'     => '',
         'pConnect'     => false,
-        'DBDebug'      => false,
+        'DBDebug'      => true,
         'charset'      => 'utf8mb4',
         'DBCollat'     => 'utf8mb4_general_ci',
         'swapPre'      => '',
         'encrypt'      => false,
         'compress'     => false,
-        'strictOn'     => true,
+        'strictOn'     => false,
         'failover'     => [],
-        'port'         => 3306,
+        'port'         => 3307,
         'numberNative' => false,
         'dateFormat'   => [
             'date'     => 'Y-m-d',

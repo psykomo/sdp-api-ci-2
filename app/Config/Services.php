@@ -91,6 +91,15 @@ class Services extends BaseService
         return new \App\Modules\Wbp\Services\WbpService();
     }
 
+    public static function referensiService(bool $getShared = false): \App\Modules\Referensi\Services\ReferensiService
+    {
+        if ($getShared) {
+            return static::getSharedInstance('referensiService');
+        }
+
+        return new \App\Modules\Referensi\Services\ReferensiService();
+    }
+
     public static function mutasiService(bool $getShared = false): \App\Modules\Mutasi\Services\MutasiService
     {
         if ($getShared) {

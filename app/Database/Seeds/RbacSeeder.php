@@ -46,6 +46,7 @@ class RbacSeeder extends Seeder
             ['key' => 'kunjungan.read', 'name' => 'Read kunjungan'],
             ['key' => 'kunjungan.write', 'name' => 'Create/update kunjungan'],
             ['key' => 'kunjungan.delete', 'name' => 'Delete kunjungan'],
+            ['key' => 'referensi.read', 'name' => 'Read referensi / master lookups'],
             ['key' => 'user.read', 'name' => 'Read users'],
             ['key' => 'user.write', 'name' => 'Create/update users'],
             ['key' => 'user.delete', 'name' => 'Delete users'],
@@ -73,8 +74,9 @@ class RbacSeeder extends Seeder
             ];
         }
         foreach ([
-            'wbp.read', 'wbp.write', 'wbp.release', 'wbp.mutasi',
+            'wbp.read', 'wbp.write', 'wbp.delete', 'wbp.release', 'wbp.mutasi',
             'kunjungan.read', 'kunjungan.write',
+            'referensi.read',
             'user.read',
         ] as $key) {
             $assignments[] = [
@@ -82,7 +84,7 @@ class RbacSeeder extends Seeder
                 'permission_id' => (int) $permsByKey[$key],
             ];
         }
-        foreach (['wbp.read', 'kunjungan.read', 'user.read'] as $key) {
+        foreach (['wbp.read', 'kunjungan.read', 'referensi.read', 'user.read'] as $key) {
             $assignments[] = [
                 'role_id'       => (int) $rolesByKey['viewer'],
                 'permission_id' => (int) $permsByKey[$key],
@@ -90,10 +92,11 @@ class RbacSeeder extends Seeder
         }
         $this->db->table('role_permissions')->insertBatch($assignments);
 
+        // For shared-schema pilot, organization.code maps to legacy ID_UPT.
         $this->db->table('organizations')->insert([
             'parent_id'  => null,
             'code'       => 'KW-DKI',
-            'name'       => 'Kanwil DKI Jakarta',
+            'name'       => 'Kanwil (all UPT — no ID_UPT filter)',
             'type'       => 'kanwil',
             'status'     => 'active',
             'created_at' => $now,
@@ -101,24 +104,23 @@ class RbacSeeder extends Seeder
         ]);
         $kanwilId = (int) $this->db->insertID();
 
-        $this->db->table('organizations')->insert([
-            'parent_id'  => $kanwilId,
-            'code'       => 'LP-CIPINANG',
-            'name'       => 'Lapas Cipinang',
-            'type'       => 'lapas',
-            'status'     => 'active',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
-
-        $this->db->table('organizations')->insert([
-            'parent_id'  => $kanwilId,
-            'code'       => 'RT-SALEMBA',
-            'name'       => 'Rutan Salemba',
-            'type'       => 'rutan',
-            'status'     => 'active',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
+        foreach (
+            [
+                ['093', 'UPT 093 (from seed perkara)', 'lapas'],
+                ['604', 'UPT 604 (from seed perkara)', 'lapas'],
+                ['LP-CIPINANG', 'Lapas Cipinang (demo code)', 'lapas'],
+                ['RT-SALEMBA', 'Rutan Salemba (demo code)', 'rutan'],
+            ] as [$code, $name, $type]
+        ) {
+            $this->db->table('organizations')->insert([
+                'parent_id'  => $kanwilId,
+                'code'       => $code,
+                'name'       => $name,
+                'type'       => $type,
+                'status'     => 'active',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
     }
 }

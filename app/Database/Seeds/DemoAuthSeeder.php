@@ -45,7 +45,7 @@ class DemoAuthSeeder extends Seeder
         }
 
         $organizations = $this->db->table('organizations')
-            ->whereIn('code', ['LP-CIPINANG', 'RT-SALEMBA'])
+            ->whereIn('code', ['KW-DKI', '093', '604', 'LP-CIPINANG', 'RT-SALEMBA'])
             ->get()
             ->getResultArray();
 

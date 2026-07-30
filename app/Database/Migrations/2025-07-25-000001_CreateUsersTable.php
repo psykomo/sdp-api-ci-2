@@ -50,7 +50,7 @@ class CreateUsersTable extends Migration
         ]);
 
         $this->forge->addKey('id', true);
-        $this->forge->addKey('email');
+        // email already unique — do not addKey('email') (MariaDB duplicate index name)
         $this->forge->addKey('status');
 
         $this->forge->createTable('users');

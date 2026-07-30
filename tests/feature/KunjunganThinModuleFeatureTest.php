@@ -11,6 +11,14 @@ use Tests\Support\Feature\ApiFeatureTestCase;
  */
 final class KunjunganThinModuleFeatureTest extends ApiFeatureTestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        if (! $this->db->tableExists('visits')) {
+            $this->markTestSkipped('Legacy schema mode: visits table not present.');
+        }
+    }
+
     public function testCreateVisitBindsActiveOrgAndIgnoresClientOrgId(): void
     {
         $token      = $this->login('op@cipinang.test')['token'];

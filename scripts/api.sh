@@ -2,27 +2,35 @@
 # Manual REST API helper for sdp-api-ci-2
 #
 # Prerequisites:
-#   php spark serve --port 8082   # match BASE_URL below
+#   php spark serve --port 8080   # or match BASE_URL
 #   ./scripts/api.sh login
-#   ./scripts/api.sh inmates      # list (note the "s")
-#   ./scripts/api.sh inmate 1     # show one by id
 #
-# Demo user (from DemoAuthSeeder):
+# Demo user (DemoAuthSeeder on db_sdp):
 #   email:    operator@sdp.local
 #   password: password
-# Org ids (single topology SQLite seed):
-#   1 = KW-DKI,  2 = LP-CIPINANG,  3 = RT-SALEMBA
 #
-# Override defaults:
-#   BASE_URL=http://localhost:8082 EMAIL=... PASSWORD=... ORG_ID=2 ./scripts/api.sh login
-#   ORG_ID=3 ./scripts/api.sh inmates
+# Org ids after seed on MariaDB (codes map to legacy ID_UPT for units):
+#   Look up: docker exec sdp-mariadb mariadb -usdp -psdp_local db_sdp \
+#     -e "SELECT id, code, name FROM organizations"
+#   Typical: KW-DKI (all UPT), 093, 604, …
+#
+# R0 / R1 examples:
+#   ./scripts/api.sh login
+#   ORG_ID=1 ./scripts/api.sh wbp
+#   ORG_ID=1 ./scripts/api.sh wbp-show 571202001150013
+#   ORG_ID=1 ./scripts/api.sh referensi jenis-registrasi
+#   ORG_ID=1 ./scripts/api.sh get /api/v1/referensi/lookups?group=Agama
+#   ORG_ID=1 ./scripts/api.sh post /api/v1/auth/login '{"email":"operator@sdp.local","password":"password"}'
+#
+# Override:
+#   BASE_URL=http://localhost:8080 ORG_ID=1 ./scripts/api.sh wbp
 
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8082}"
 EMAIL="${EMAIL:-operator@sdp.local}"
 PASSWORD="${PASSWORD:-password}"
-ORG_ID="${ORG_ID:-2}"
+ORG_ID="${ORG_ID:-1}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/sdp-api-token}"
 
 pretty() {
@@ -38,24 +46,28 @@ pretty() {
   fi
 }
 
-# Perform HTTP request; print JSON body; exit non-zero on curl/network failure.
+urlencode() {
+  python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$1" 2>/dev/null \
+    || echo "$1"
+}
+
+# Perform HTTP request; print JSON body; exit non-zero on HTTP >= 400.
 # Usage: request METHOD URL [curl -H / -d args...]
 request() {
   local method="$1" url="$2"
   shift 2
-  local tmp code
+  local tmp code body
   tmp="$(mktemp)"
   code="$(curl -sS -o "$tmp" -w "%{http_code}" -X "$method" "$url" "$@" || true)"
 
   if [[ -z "$code" || "$code" == "000" ]]; then
     echo "Request failed — is the API running at ${BASE_URL} ?" >&2
-    echo "Start it with: php spark serve --port ${BASE_URL##*:}" >&2
+    echo "Start it with: php spark serve --host 127.0.0.1 --port ${BASE_URL##*:}" >&2
     rm -f "$tmp"
     exit 1
   fi
 
   echo "HTTP ${code}" >&2
-  local body
   body="$(cat "$tmp")"
   rm -f "$tmp"
   pretty "$body"
@@ -76,6 +88,123 @@ auth_headers() {
     exit 1
   fi
 }
+
+# Resolve path: allow "api/v1/foo" or "/api/v1/foo" or full URL
+resolve_url() {
+  local path="$1"
+  if [[ "$path" == http://* || "$path" == https://* ]]; then
+    echo "$path"
+  elif [[ "$path" == /* ]]; then
+    echo "${BASE_URL}${path}"
+  else
+    echo "${BASE_URL}/${path}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Generic GET / POST (authenticated when token exists; pass --public for none)
+# ---------------------------------------------------------------------------
+
+cmd_get() {
+  local path="${1:-}"
+  if [[ -z "$path" ]]; then
+    echo "Usage: $0 get <path> [query...]" >&2
+    echo "  $0 get /api/v1/wbp" >&2
+    echo "  $0 get /api/v1/referensi/lookups?group=Agama" >&2
+    exit 1
+  fi
+  shift || true
+
+  local url
+  url="$(resolve_url "$path")"
+  # append extra query pieces if any: get /api/v1/wbp search=foo
+  if [[ $# -gt 0 ]]; then
+    local q
+    q="$(IFS='&'; echo "$*")"
+    if [[ "$url" == *\?* ]]; then
+      url="${url}&${q}"
+    else
+      url="${url}?${q}"
+    fi
+  fi
+
+  auth_headers
+  echo "GET ${url}  (X-Org-Id: ${ORG_ID})" >&2
+  request GET "$url" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+cmd_post() {
+  local path="${1:-}"
+  local body="${2:-}"
+  if [[ -z "$path" ]]; then
+    echo "Usage: $0 post <path> [json-body]" >&2
+    echo "  $0 post /api/v1/auth/login '{\"email\":\"operator@sdp.local\",\"password\":\"password\"}'" >&2
+    echo "  $0 post /api/v1/wbp '{\"nama_lengkap\":\"…\"}'" >&2
+    exit 1
+  fi
+
+  local url
+  url="$(resolve_url "$path")"
+
+  # Login path does not need token
+  if [[ "$path" == *"/auth/login"* ]]; then
+    echo "POST ${url}" >&2
+    if [[ -n "$body" ]]; then
+      request POST "$url" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        -d "$body"
+    else
+      request POST "$url" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        -d "{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}"
+    fi
+    return
+  fi
+
+  auth_headers
+  if [[ -z "$body" ]]; then
+    body="{}"
+  fi
+  echo "POST ${url}  (X-Org-Id: ${ORG_ID})" >&2
+  request POST "$url" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+cmd_put() {
+  local path="${1:-}"
+  local body="${2:-}"
+  if [[ -z "$path" ]]; then
+    echo "Usage: $0 put <path> [json-body]" >&2
+    echo "  $0 put /api/v1/wbp/registrasi/<ID_PERKARA> '{\"keterangan\":\"…\"}'" >&2
+    exit 1
+  fi
+  auth_headers
+  if [[ -z "$body" ]]; then
+    body="{}"
+  fi
+  local url
+  url="$(resolve_url "$path")"
+  echo "PUT ${url}  (X-Org-Id: ${ORG_ID})" >&2
+  request PUT "$url" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+# ---------------------------------------------------------------------------
+# Core
+# ---------------------------------------------------------------------------
 
 cmd_ping() {
   echo "GET ${BASE_URL}/api/v1/ping" >&2
@@ -115,16 +244,21 @@ cmd_login() {
   printf '%s' "$TOKEN" >"$TOKEN_FILE"
   echo "" >&2
   echo "Token saved to ${TOKEN_FILE}" >&2
-  echo "Next: $0 inmates     # list  |  $0 inmate <id>  # show one" >&2
+  echo "Next: ORG_ID=${ORG_ID} $0 wbp" >&2
+  echo "      ORG_ID=${ORG_ID} $0 referensi jenis-registrasi" >&2
   echo "Using ORG_ID=${ORG_ID}  BASE_URL=${BASE_URL}" >&2
 }
 
-cmd_inmates() {
+# ---------------------------------------------------------------------------
+# R1 Wbp (legacy identitas)
+# ---------------------------------------------------------------------------
+
+cmd_wbp() {
   auth_headers
   SEARCH="${1:-}"
-  URL="${BASE_URL}/api/v1/inmates?perPage=20"
+  URL="${BASE_URL}/api/v1/wbp?perPage=20"
   if [[ -n "$SEARCH" ]]; then
-    URL="${URL}&search=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$SEARCH" 2>/dev/null || echo "$SEARCH")"
+    URL="${URL}&search=$(urlencode "$SEARCH")"
   fi
 
   echo "GET ${URL}  (X-Org-Id: ${ORG_ID})" >&2
@@ -134,117 +268,278 @@ cmd_inmates() {
     -H "X-Org-Id: ${ORG_ID}"
 }
 
-cmd_inmate() {
-  # No id → list (people often type "inmate" when they mean list)
+cmd_wbp_show() {
   if [[ -z "${1:-}" ]]; then
-    echo "Note: 'inmate' without id lists all. Use: $0 inmate <id> for one." >&2
-    cmd_inmates
+    echo "Usage: $0 wbp-show <NOMOR_INDUK>" >&2
+    echo "  $0 wbp-show 571202001150013" >&2
+    exit 1
+  fi
+  auth_headers
+  local id
+  id="$(urlencode "$1")"
+  echo "GET ${BASE_URL}/api/v1/wbp/${id}  (X-Org-Id: ${ORG_ID})" >&2
+  request GET "${BASE_URL}/api/v1/wbp/${id}" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+cmd_wbp_create() {
+  auth_headers
+  local name="${1:-Test WBP $(date +%H%M%S)}"
+  local extra="${2:-}"
+  local body
+  body="$(printf '{"nama_lengkap":"%s","id_jenis_kelamin":"L","alamat":"Alamat uji API","nik":"3174%010d"}' \
+    "$name" "$((RANDOM % 1000000000))")"
+  if [[ -n "$extra" ]]; then
+    body="$extra"
+  fi
+  echo "POST ${BASE_URL}/api/v1/wbp  (X-Org-Id: ${ORG_ID})" >&2
+  request POST "${BASE_URL}/api/v1/wbp" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+cmd_wbp_update() {
+  auth_headers
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 wbp-update <NOMOR_INDUK> [nama_lengkap]" >&2
+    exit 1
+  fi
+  local id name body
+  id="$(urlencode "$1")"
+  name="${2:-Updated via api.sh}"
+  body="$(printf '{"nama_lengkap":"%s"}' "$name")"
+  echo "PUT ${BASE_URL}/api/v1/wbp/${id}" >&2
+  request PUT "${BASE_URL}/api/v1/wbp/${id}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+cmd_wbp_delete() {
+  auth_headers
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 wbp-delete <NOMOR_INDUK>" >&2
+    exit 1
+  fi
+  local id
+  id="$(urlencode "$1")"
+  echo "DELETE ${BASE_URL}/api/v1/wbp/${id}" >&2
+  request DELETE "${BASE_URL}/api/v1/wbp/${id}" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+# R3 registrasi create
+# Usage: registrasi <NOMOR_INDUK> [ID_REG] [JSON extra overrides via env BODY=...]
+cmd_registrasi() {
+  auth_headers
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 registrasi <NOMOR_INDUK> [ID_REG=BI]" >&2
+    echo "  Or: BODY='{...full json...}' $0 registrasi" >&2
+    exit 1
+  fi
+  local ni reg body
+  if [[ -n "${BODY:-}" ]]; then
+    body="$BODY"
+  else
+    ni="$1"
+    reg="${2:-BI}"
+    body="$(cat <<EOF
+{
+  "nomor_induk": "${ni}",
+  "id_reg": "${reg}",
+  "id_status": "STA",
+  "id_sub_status": "SSA1",
+  "nmr_reg_gol": "${reg}.API/$(date +%Y)",
+  "tgl_msk_lapas": "$(date +%Y-%m-%d)",
+  "kejahatan": [
+    {
+      "pasal_utama": "DUMMY-PASAL",
+      "uu_kejahatan": "UU Test",
+      "is_kejahatan_utama": 1
+    }
+  ],
+  "hukuman": {
+    "id_jenis_hukuman": "PID",
+    "thn_kurung": 1,
+    "bln_kurung": 0,
+    "hr_kurung": 0,
+    "tgl_putusan": "$(date +%Y-%m-%d)",
+    "nmr_putusan": "API-TEST/1"
+  }
+}
+EOF
+)"
+  fi
+  echo "POST ${BASE_URL}/api/v1/wbp/registrasi  (X-Org-Id: ${ORG_ID})" >&2
+  request POST "${BASE_URL}/api/v1/wbp/registrasi" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+# R6 list / show registrasi
+cmd_registrasi_list() {
+  auth_headers
+  local search="${1:-}"
+  local url="${BASE_URL}/api/v1/wbp/registrasi?perPage=20"
+  if [[ -n "$search" ]]; then
+    url="${url}&search=$(urlencode "$search")"
+  fi
+  echo "GET ${url}  (X-Org-Id: ${ORG_ID})" >&2
+  request GET "$url" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+cmd_registrasi_show() {
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 registrasi-show <ID_PERKARA>" >&2
+    exit 1
+  fi
+  auth_headers
+  local id
+  id="$(urlencode "$1")"
+  echo "GET ${BASE_URL}/api/v1/wbp/registrasi/${id}  (X-Org-Id: ${ORG_ID})" >&2
+  request GET "${BASE_URL}/api/v1/wbp/registrasi/${id}" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+# R4 update registrasi
+# Usage: registrasi-update <ID_PERKARA> [keterangan]
+#    or: BODY='{...}' $0 registrasi-update <ID_PERKARA>
+cmd_registrasi_update() {
+  auth_headers
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 registrasi-update <ID_PERKARA> [keterangan]" >&2
+    echo "  Or: BODY='{\"nmr_reg_gol\":\"…\"}' $0 registrasi-update <ID_PERKARA>" >&2
+    exit 1
+  fi
+  local id body
+  id="$(urlencode "$1")"
+  if [[ -n "${BODY:-}" ]]; then
+    body="$BODY"
+  else
+    local ket="${2:-Updated via api.sh R4}"
+    body="$(printf '{"keterangan":"%s"}' "$ket")"
+  fi
+  echo "PUT ${BASE_URL}/api/v1/wbp/registrasi/${id}  (X-Org-Id: ${ORG_ID})" >&2
+  request PUT "${BASE_URL}/api/v1/wbp/registrasi/${id}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+# Aliases for old names
+cmd_inmates() { cmd_wbp "$@"; }
+cmd_inmate() {
+  if [[ -z "${1:-}" ]]; then
+    cmd_wbp
     return
   fi
-
-  auth_headers
-  ID="$1"
-  echo "GET ${BASE_URL}/api/v1/inmates/${ID}  (X-Org-Id: ${ORG_ID})" >&2
-  request GET "${BASE_URL}/api/v1/inmates/${ID}" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}"
+  cmd_wbp_show "$@"
 }
 
-cmd_create_inmate() {
-  auth_headers
-  REG="${1:-REG-$(date +%s)}"
-  NAME="${2:-Budi Santoso}"
+# ---------------------------------------------------------------------------
+# R0 Referensi
+# ---------------------------------------------------------------------------
 
-  echo "POST ${BASE_URL}/api/v1/inmates  reg=${REG}" >&2
-  request POST "${BASE_URL}/api/v1/inmates" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}" \
-    -d "{
-      \"registration_number\": \"${REG}\",
-      \"full_name\": \"${NAME}\",
-      \"gender\": \"L\"
-    }"
+cmd_referensi() {
+  auth_headers
+  local sub="${1:-}"
+  shift || true
+
+  case "$sub" in
+    jenis-registrasi|jenis)
+      local qs=""
+      if [[ "${1:-}" == "all" ]]; then qs="?active=0"; fi
+      if [[ "${1:-}" == "tahanan" ]]; then qs="?is_tahanan=1"; fi
+      if [[ "${1:-}" == "napi" ]]; then qs="?is_tahanan=0"; fi
+      echo "GET ${BASE_URL}/api/v1/referensi/jenis-registrasi${qs}" >&2
+      request GET "${BASE_URL}/api/v1/referensi/jenis-registrasi${qs}" \
+        -H "Accept: application/json" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "X-Org-Id: ${ORG_ID}"
+      ;;
+    groups)
+      echo "GET ${BASE_URL}/api/v1/referensi/groups" >&2
+      request GET "${BASE_URL}/api/v1/referensi/groups" \
+        -H "Accept: application/json" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "X-Org-Id: ${ORG_ID}"
+      ;;
+    lookups)
+      local group="${1:-}"
+      if [[ -z "$group" ]]; then
+        echo "Usage: $0 referensi lookups <group>" >&2
+        echo "  $0 referensi lookups Agama" >&2
+        exit 1
+      fi
+      echo "GET ${BASE_URL}/api/v1/referensi/lookups?group=$(urlencode "$group")" >&2
+      request GET "${BASE_URL}/api/v1/referensi/lookups?group=$(urlencode "$group")" \
+        -H "Accept: application/json" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "X-Org-Id: ${ORG_ID}"
+      ;;
+    lookup)
+      if [[ -z "${1:-}" ]]; then
+        echo "Usage: $0 referensi lookup <ID_LOOKUP>" >&2
+        exit 1
+      fi
+      echo "GET ${BASE_URL}/api/v1/referensi/lookups/$(urlencode "$1")" >&2
+      request GET "${BASE_URL}/api/v1/referensi/lookups/$(urlencode "$1")" \
+        -H "Accept: application/json" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "X-Org-Id: ${ORG_ID}"
+      ;;
+    upt)
+      local search="${1:-}"
+      local url="${BASE_URL}/api/v1/referensi/upt"
+      if [[ -n "$search" ]]; then
+        url="${url}?search=$(urlencode "$search")"
+      fi
+      echo "GET ${url}" >&2
+      request GET "$url" \
+        -H "Accept: application/json" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "X-Org-Id: ${ORG_ID}"
+      ;;
+    ""|help)
+      cat <<EOF
+Usage: $0 referensi <subcommand>
+
+  jenis-registrasi [all|tahanan|napi]
+  groups
+  lookups <group>          e.g. Agama
+  lookup <ID_LOOKUP>       e.g. ISM
+  upt [search]
+EOF
+      ;;
+    *)
+      echo "Unknown referensi subcommand: $sub" >&2
+      exit 1
+      ;;
+  esac
 }
 
-cmd_update_inmate() {
-  auth_headers
-  if [[ -z "${1:-}" ]]; then
-    echo "Usage: $0 update-inmate <id> [full_name]" >&2
-    exit 1
-  fi
-  ID="$1"
-  NAME="${2:-Updated Name}"
-
-  echo "PUT ${BASE_URL}/api/v1/inmates/${ID}" >&2
-  request PUT "${BASE_URL}/api/v1/inmates/${ID}" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}" \
-    -d "{\"full_name\": \"${NAME}\"}"
-}
-
-cmd_delete_inmate() {
-  auth_headers
-  if [[ -z "${1:-}" ]]; then
-    echo "Usage: $0 delete-inmate <id>" >&2
-    exit 1
-  fi
-  ID="$1"
-  echo "DELETE ${BASE_URL}/api/v1/inmates/${ID}" >&2
-  request DELETE "${BASE_URL}/api/v1/inmates/${ID}" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}"
-}
-
-cmd_release_inmate() {
-  auth_headers
-  if [[ -z "${1:-}" ]]; then
-    echo "Usage: $0 release-inmate <id>" >&2
-    exit 1
-  fi
-  ID="$1"
-  TODAY="$(date +%Y-%m-%d)"
-
-  echo "POST ${BASE_URL}/api/v1/inmates/${ID}/releases" >&2
-  request POST "${BASE_URL}/api/v1/inmates/${ID}/releases" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}" \
-    -d "{
-      \"release_type\": \"bebas_murni\",
-      \"release_date\": \"${TODAY}\",
-      \"notes\": \"Manual API test release\"
-    }"
-}
-
-cmd_transfer_inmate() {
-  auth_headers
-  if [[ -z "${1:-}" ]]; then
-    echo "Usage: $0 transfer-inmate <id> [to_org_id]" >&2
-    exit 1
-  fi
-  ID="$1"
-  TO_ORG="${2:-3}"
-  NOW="$(date '+%Y-%m-%d %H:%M:%S')"
-
-  echo "POST ${BASE_URL}/api/v1/inmates/${ID}/transfers  → org ${TO_ORG}" >&2
-  request POST "${BASE_URL}/api/v1/inmates/${ID}/transfers" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}" \
-    -d "{
-      \"to_organization_id\": ${TO_ORG},
-      \"reason\": \"Manual API test transfer\",
-      \"transferred_at\": \"${NOW}\"
-    }"
-}
+# ---------------------------------------------------------------------------
+# Other
+# ---------------------------------------------------------------------------
 
 cmd_users() {
   auth_headers
@@ -255,74 +550,64 @@ cmd_users() {
     -H "X-Org-Id: ${ORG_ID}"
 }
 
-cmd_visits() {
-  auth_headers
-  echo "GET ${BASE_URL}/api/v1/visits  (X-Org-Id: ${ORG_ID})" >&2
-  request GET "${BASE_URL}/api/v1/visits?perPage=20" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}"
-}
-
-cmd_create_visit() {
-  auth_headers
-  INMATE_ID="${1:-}"
-  NOW="$(date '+%Y-%m-%d %H:%M:%S')"
-  BODY="\"visitor_name\": \"Siti Aminah\", \"visited_at\": \"${NOW}\", \"status\": \"scheduled\""
-  if [[ -n "$INMATE_ID" ]]; then
-    BODY="\"inmate_id\": ${INMATE_ID}, ${BODY}"
-  fi
-
-  echo "POST ${BASE_URL}/api/v1/visits" >&2
-  request POST "${BASE_URL}/api/v1/visits" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "X-Org-Id: ${ORG_ID}" \
-    -d "{${BODY}}"
-}
-
 cmd_flow() {
-  # One-shot: login → create inmate → list inmates
   cmd_login
   echo "" >&2
-  cmd_create_inmate "REG-DEMO-$(date +%s)" "Demo WBP"
+  cmd_referensi jenis-registrasi
   echo "" >&2
-  cmd_inmates
+  cmd_wbp
 }
 
 usage() {
   cat <<EOF
 Usage: $0 <command> [args]
 
-Commands:
+Auth / health:
   ping                          Health check (no auth)
   login                         Login and save Bearer token
-  inmates [search]              List inmates  ← use this after login
-  inmate [id]                   Show one inmate (no id = same as list)
-  create-inmate [reg] [name]    Create inmate
-  update-inmate <id> [name]     Update inmate name
-  delete-inmate <id>            Delete inmate
-  release-inmate <id>           Release inmate (bebas_murni)
-  transfer-inmate <id> [to]     Transfer inmate (default to org 3)
-  users                         List users in org
-  visits                        List visits
-  create-visit [inmate_id]      Create visit
-  flow                          login → create inmate → list
+
+Generic HTTP (after login, unless path is auth/login):
+  get  <path> [k=v…]            Authenticated GET
+  post <path> [json-body]       Authenticated POST (login path is public)
+  put  <path> [json-body]       Authenticated PUT
+
+R1/R2 Wbp (legacy identitas):
+  wbp [search]                  List WBP
+  wbp-show <NOMOR_INDUK>        Show one WBP + perkara
+  wbp-create [nama]             Create identitas (needs unit ORG_ID e.g. 093)
+  wbp-update <NOMOR_INDUK> [nama]
+  wbp-delete <NOMOR_INDUK>      Soft-delete (no active perkara)
+  registrasi <NOMOR_INDUK> [ID_REG]   R3 create perkara+history+kejahatan+hukuman
+  registrasi-list [search]            R6 list active perkara
+  registrasi-show <ID_PERKARA>        R6 show detail
+  registrasi-update <ID_PERKARA> […]  R4 edit (or BODY=json)
+  inmates / inmate …            Aliases for wbp / wbp-show
+
+R0 Referensi:
+  referensi jenis-registrasi [all|tahanan|napi]
+  referensi groups
+  referensi lookups <group>
+  referensi lookup <ID_LOOKUP>
+  referensi upt [search]
+
+Other:
+  users                         List API users in org
+  flow                          login → jenis-registrasi → wbp list
 
 Environment:
-  BASE_URL     default http://localhost:8082
+  BASE_URL     default http://localhost:8080
   EMAIL        default operator@sdp.local
   PASSWORD     default password
-  ORG_ID       default 2 (LP-CIPINANG)
+  ORG_ID       default 1 (often KW-DKI after seed — check organizations table)
   TOKEN_FILE   default /tmp/sdp-api-token
 
 Examples:
   $0 login
-  $0 inmates
-  $0 create-inmate REG-001 "Budi Santoso"
-  $0 inmate 1
-  ORG_ID=3 $0 inmates
+  ORG_ID=1 $0 wbp
+  ORG_ID=1 $0 wbp-show 571202001150013
+  ORG_ID=1 $0 referensi lookups Agama
+  ORG_ID=1 $0 get /api/v1/referensi/jenis-registrasi
+  ORG_ID=1 $0 post /api/v1/wbp '{}'
   $0 flow
 EOF
 }
@@ -334,16 +619,22 @@ main() {
   case "$CMD" in
     ping)             cmd_ping "$@" ;;
     login)            cmd_login "$@" ;;
+    get)              cmd_get "$@" ;;
+    post)             cmd_post "$@" ;;
+    put)              cmd_put "$@" ;;
+    wbp)              cmd_wbp "$@" ;;
+    wbp-show)         cmd_wbp_show "$@" ;;
+    wbp-create|create-wbp|create-inmate) cmd_wbp_create "$@" ;;
+    wbp-update|update-wbp|update-inmate) cmd_wbp_update "$@" ;;
+    wbp-delete|delete-wbp|delete-inmate) cmd_wbp_delete "$@" ;;
+    registrasi|reg)   cmd_registrasi "$@" ;;
+    registrasi-list|reg-list) cmd_registrasi_list "$@" ;;
+    registrasi-show|reg-show) cmd_registrasi_show "$@" ;;
+    registrasi-update|reg-update) cmd_registrasi_update "$@" ;;
     inmates)          cmd_inmates "$@" ;;
     inmate)           cmd_inmate "$@" ;;
-    create-inmate)    cmd_create_inmate "$@" ;;
-    update-inmate)    cmd_update_inmate "$@" ;;
-    delete-inmate)    cmd_delete_inmate "$@" ;;
-    release-inmate)   cmd_release_inmate "$@" ;;
-    transfer-inmate)  cmd_transfer_inmate "$@" ;;
+    referensi|ref)    cmd_referensi "$@" ;;
     users)            cmd_users "$@" ;;
-    visits)           cmd_visits "$@" ;;
-    create-visit)     cmd_create_visit "$@" ;;
     flow)             cmd_flow "$@" ;;
     -h|--help|help|"") usage ;;
     *)

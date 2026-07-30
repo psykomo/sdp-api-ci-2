@@ -33,8 +33,12 @@ class ConnectionResolverTest extends CIUnitTestCase
             'LP-CIPINANG' => 'tenant_cipinang_test',
             'RT-SALEMBA'  => 'tenant_salemba_test',
         ];
-        // Force SQLite template even if mariadb credentials exist.
-        $config->defaultGroup = 'default';
+        // Force SQLite template even if mariadb credentials exist in .env.
+        $config->defaultGroup           = 'default';
+        $config->default['DBDriver']    = 'SQLite3';
+        $config->default['database']    = WRITEPATH . 'db' . DIRECTORY_SEPARATOR . 'sdp_api.sqlite';
+        $config->mariadb['username']    = '';
+        $config->mariadb['hostname']    = '';
 
         $resolver = new ConnectionResolver($config);
         $this->assertTrue($resolver->isMulti());
