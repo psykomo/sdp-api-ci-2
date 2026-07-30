@@ -31,9 +31,16 @@ class HistoryRegistrasiModel extends Model
         'TGL_AKHIR_DITAHAN',
         'ID_INSTANSI_PENYIDIK',
         'ID_INSTANSI_PENYIDIK_LAIN',
+        'KETERANGAN',
+        'LOKASI_SEL',
+        'LOKASI_DOKUMEN',
+        'TAHUN_HUKUMAN',
+        'BULAN_HUKUMAN',
+        'HARI_HUKUMAN',
         'IS_DELETE',
         'ID_USER',
         'TGL_ENTRY',
+        'TGL_MG',
         'KONSOLIDASI',
     ];
 }

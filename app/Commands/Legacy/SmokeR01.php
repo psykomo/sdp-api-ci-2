@@ -20,7 +20,7 @@ class SmokeR01 extends BaseCommand
     protected $description = 'Smoke-test R0/R1 reads (and optional R2 write) on db_sdp';
     protected $options     = [
         '--write'      => 'Also run R2 create + soft-delete with a synthetic NOMOR_INDUK',
-        '--registrasi' => 'Also run R3 create + R4 update registrasi (identitas + perkara spine)',
+        '--registrasi' => 'Also run R3–R5 + M1 mutasi golongan (identitas + perkara spine)',
     ];
 
     public function run(array $params)
@@ -191,5 +191,106 @@ class SmokeR01 extends BaseCommand
             return;
         }
         CLI::write('R4 show OK history_count=' . $show['history_count'], 'green');
+
+        // R5 — list / append / update / soft-delete history
+        $histList = $svc->listHistory($idPerkara, 20, 1);
+        CLI::write('R5 history list total=' . $histList['meta']['total'], 'green');
+        if ($histList['items'] === []) {
+            CLI::error('R5 smoke failed: expected history rows after R3/R4');
+
+            return;
+        }
+        $firstHistId = (string) ($histList['items'][0]['id_history_reg'] ?? '');
+        $histShow    = $svc->findHistoryOrFail($idPerkara, $firstHistId);
+        CLI::write('R5 show history=' . ($histShow['id_history_reg'] ?? ''), 'green');
+
+        $appended = $svc->createHistory($idPerkara, [
+            'keterangan' => 'API R5 smoke append',
+        ]);
+        $appendId = (string) ($appended['id_history_reg'] ?? '');
+        CLI::write('R5 append: ' . $appendId, 'green');
+
+        $histUpd = $svc->updateHistory($idPerkara, $appendId, [
+            'keterangan'  => 'API R5 smoke edit',
+            'nmr_reg_gol' => 'BI.SMOKE-R5/' . date('Y'),
+        ]);
+        if (($histUpd['keterangan'] ?? '') !== 'API R5 smoke edit') {
+            CLI::error('R5 smoke failed: keterangan not updated');
+
+            return;
+        }
+        CLI::write('R5 update: nmr=' . ($histUpd['nmr_reg_gol'] ?? ''), 'green');
+
+        $deleted = $svc->deleteHistory($idPerkara, $appendId);
+        CLI::write('R5 soft-delete: ' . ($deleted['id_history_reg'] ?? ''), 'green');
+
+        $afterDelete = $svc->listHistory($idPerkara, 50, 1);
+        foreach ($afterDelete['items'] as $item) {
+            if (($item['id_history_reg'] ?? '') === $appendId) {
+                CLI::error('R5 smoke failed: soft-deleted history still listed');
+
+                return;
+            }
+        }
+        CLI::write('R5 list excludes soft-deleted OK', 'green');
+
+        // M1 — mutasi golongan (BI → BIII; LEVEL 6 → 8)
+        $this->smokeM1MutasiGolongan($ctx, $idPerkara);
+    }
+
+    private function smokeM1MutasiGolongan(\App\Services\OrgContext $ctx, string $idPerkara): void
+    {
+        $mutasiSvc = new \App\Modules\Mutasi\Services\MutasiGolonganService(
+            orgContext: $ctx,
+        );
+
+        $opts = $mutasiSvc->options($idPerkara);
+        CLI::write('M1 options count=' . count($opts), 'green');
+        if ($opts === []) {
+            CLI::error('M1 smoke failed: no target golongan options for perkara');
+
+            return;
+        }
+
+        $target = null;
+        foreach ($opts as $o) {
+            if (($o['id_reg'] ?? '') === 'BIII') {
+                $target = 'BIII';
+                break;
+            }
+        }
+        $target ??= (string) ($opts[0]['id_reg'] ?? '');
+
+        $result = $mutasiSvc->create([
+            'id_perkara'    => $idPerkara,
+            'id_reg_akhir'  => $target,
+            'nmr_srt_mg'    => 'M1/1',
+            'tgl_srt_mg'    => date('Y-m-d'),
+            'tgl_efektif'   => date('Y-m-d'),
+            'nmr_reg_gol'   => $target . '.SMOKE/' . date('Y'),
+            'keterangan'    => 'API M1 smoke',
+        ]);
+        CLI::write(
+            'M1 mutasi: ' . ($result['id_reg_awal'] ?? '') . '→' . ($result['id_reg_akhir'] ?? '')
+            . ' id=' . ($result['id_mutasi_tahanan'] ?? '')
+            . ' hist=' . ($result['id_history_reg'] ?? ''),
+            'green',
+        );
+
+        $reg = $result['registrasi'] ?? [];
+        if (($reg['id_reg'] ?? '') !== $target) {
+            CLI::error('M1 smoke failed: perkara.id_reg not updated to ' . $target);
+
+            return;
+        }
+
+        $list = $mutasiSvc->listForPerkara($idPerkara, 10, 1);
+        if ((int) ($list['meta']['total'] ?? 0) < 1) {
+            CLI::error('M1 smoke failed: mutasi list empty after create');
+
+            return;
+        }
+        $show = $mutasiSvc->findOrFail((string) ($result['id_mutasi_tahanan'] ?? ''));
+        CLI::write('M1 show/list OK total=' . $list['meta']['total'] . ' reg_akhir=' . ($show['id_reg_akhir'] ?? ''), 'green');
     }
 }

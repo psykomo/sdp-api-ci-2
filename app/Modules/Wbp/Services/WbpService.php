@@ -2,16 +2,19 @@
 
 namespace App\Modules\Wbp\Services;
 
+use App\Modules\Wbp\Actions\DaftarHistoryRegistrasi;
 use App\Modules\Wbp\Actions\DaftarIdentitas;
+use App\Modules\Wbp\Actions\HapusHistoryRegistrasi;
 use App\Modules\Wbp\Actions\HapusIdentitas;
 use App\Modules\Wbp\Actions\RegistrasiBaru;
+use App\Modules\Wbp\Actions\UbahHistoryRegistrasi;
 use App\Modules\Wbp\Actions\UbahIdentitas;
 use App\Modules\Wbp\Actions\UbahRegistrasi;
 use App\Services\OrgContext;
 use DomainException;
 
 /**
- * Wbp facade — R1/R2 identitas, R3 create + R4 edit registrasi, R6 list/show.
+ * Wbp facade — R1/R2 identitas, R3–R5 registrasi/history, R6 list/show.
  */
 class WbpService
 {
@@ -27,6 +30,12 @@ class WbpService
 
     protected UbahRegistrasi $ubahRegistrasi;
 
+    protected DaftarHistoryRegistrasi $daftarHistory;
+
+    protected UbahHistoryRegistrasi $ubahHistory;
+
+    protected HapusHistoryRegistrasi $hapusHistory;
+
     public function __construct(
         protected ?OrgContext $orgContext = null,
         ?WbpQueryService $query = null,
@@ -35,6 +44,9 @@ class WbpService
         ?HapusIdentitas $hapus = null,
         ?RegistrasiBaru $registrasiBaru = null,
         ?UbahRegistrasi $ubahRegistrasi = null,
+        ?DaftarHistoryRegistrasi $daftarHistory = null,
+        ?UbahHistoryRegistrasi $ubahHistory = null,
+        ?HapusHistoryRegistrasi $hapusHistory = null,
     ) {
         $this->orgContext ??= service('orgContext');
         $this->query  = $query ?? new WbpQueryService(orgContext: $this->orgContext);
@@ -46,6 +58,18 @@ class WbpService
             query: $this->query,
         );
         $this->ubahRegistrasi = $ubahRegistrasi ?? new UbahRegistrasi(
+            orgContext: $this->orgContext,
+            query: $this->query,
+        );
+        $this->daftarHistory = $daftarHistory ?? new DaftarHistoryRegistrasi(
+            orgContext: $this->orgContext,
+            query: $this->query,
+        );
+        $this->ubahHistory = $ubahHistory ?? new UbahHistoryRegistrasi(
+            orgContext: $this->orgContext,
+            query: $this->query,
+        );
+        $this->hapusHistory = $hapusHistory ?? new HapusHistoryRegistrasi(
             orgContext: $this->orgContext,
             query: $this->query,
         );
@@ -137,6 +161,58 @@ class WbpService
     public function findRegistrasiOrFail(string $idPerkara): array
     {
         return $this->query->findRegistrasiOrFail($idPerkara);
+    }
+
+    /**
+     * R5 list history for a perkara.
+     *
+     * @return array{items: list<mixed>, meta: array<string, int>}
+     */
+    public function listHistory(string $idPerkara, int $perPage = 50, int $page = 1): array
+    {
+        return $this->query->listHistory($idPerkara, $perPage, $page);
+    }
+
+    /**
+     * R5 show one history row.
+     *
+     * @return array<string, mixed>
+     */
+    public function findHistoryOrFail(string $idPerkara, string $idHistoryReg): array
+    {
+        return $this->query->findHistoryOrFail($idPerkara, $idHistoryReg);
+    }
+
+    /**
+     * R5 append history snapshot.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function createHistory(string $idPerkara, array $data = []): array
+    {
+        return $this->daftarHistory->execute($idPerkara, $data);
+    }
+
+    /**
+     * R5 update history row (+ optional shared kejahatan/hukuman).
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function updateHistory(string $idPerkara, string $idHistoryReg, array $data): array
+    {
+        return $this->ubahHistory->execute($idPerkara, $idHistoryReg, $data);
+    }
+
+    /**
+     * R5 soft-delete history row.
+     *
+     * @return array{id_history_reg: string, id_perkara: string, is_delete: int}
+     */
+    public function deleteHistory(string $idPerkara, string $idHistoryReg): array
+    {
+        return $this->hapusHistory->execute($idPerkara, $idHistoryReg);
     }
 
     /**

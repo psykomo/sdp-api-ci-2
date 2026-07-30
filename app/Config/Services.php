@@ -109,6 +109,16 @@ class Services extends BaseService
         return new \App\Modules\Mutasi\Services\MutasiService();
     }
 
+    /** M1 mutasi golongan on legacy mutasi_golongan / perkara. */
+    public static function mutasiGolonganService(bool $getShared = false): \App\Modules\Mutasi\Services\MutasiGolonganService
+    {
+        if ($getShared) {
+            return static::getSharedInstance('mutasiGolonganService');
+        }
+
+        return new \App\Modules\Mutasi\Services\MutasiGolonganService();
+    }
+
     /** Thin-module reference — see App\Modules\Kunjungan. */
     public static function kunjunganService(bool $getShared = false): \App\Modules\Kunjungan\Services\KunjunganService
     {

@@ -9,7 +9,7 @@ use App\Services\OrgContext;
 use CodeIgniter\Exceptions\PageNotFoundException;
 
 /**
- * R1 identitas reads + R4/R6 registrasi (perkara) reads against legacy schema.
+ * R1 identitas + R4/R5/R6 registrasi & history reads against legacy schema.
  *
  * Org scoping: organizations.code is treated as legacy ID_UPT for unit orgs.
  * Kanwil (type=kanwil) sees all active identitas in seed (no child UPT map yet).
@@ -24,6 +24,134 @@ class WbpQueryService
     ) {
         $this->orgContext ??= service('orgContext');
         $this->organizations ??= model(OrganizationModel::class, false);
+    }
+
+    /**
+     * R5 — list active history_registrasi rows for a perkara (org-scoped via perkara).
+     *
+     * @return array{items: list<array<string, mixed>>, meta: array<string, int>}
+     */
+    public function listHistory(string $idPerkara, int $perPage = 50, int $page = 1): array
+    {
+        // Scope check (throws 404 if out of org)
+        $this->findRegistrasiOrFail($idPerkara);
+
+        $perPage = max(1, min($perPage, 100));
+        $page    = max(1, $page);
+        $offset  = ($page - 1) * $perPage;
+
+        $db = $this->perkara->db;
+
+        $countBuilder = $db->table('history_registrasi')
+            ->where('ID_PERKARA', $idPerkara)
+            ->where('IS_DELETE', 0);
+        $total = (int) $countBuilder->countAllResults();
+
+        $rows = $db->table('history_registrasi')
+            ->where('ID_PERKARA', $idPerkara)
+            ->where('IS_DELETE', 0)
+            ->orderBy('TGL_ENTRY', 'DESC')
+            ->orderBy('ID_HISTORY_REG', 'DESC')
+            ->limit($perPage, $offset)
+            ->get()
+            ->getResultArray();
+
+        $items = array_map(fn (array $r): array => $this->presentHistorySummary($r), $rows);
+
+        return [
+            'items' => $items,
+            'meta'  => [
+                'page'      => $page,
+                'perPage'   => $perPage,
+                'total'     => $total,
+                'pageCount' => $perPage > 0 ? (int) ceil($total / $perPage) : 0,
+            ],
+        ];
+    }
+
+    /**
+     * R5 — show one history_registrasi row; must belong to id_perkara and org scope.
+     *
+     * @return array<string, mixed>
+     */
+    public function findHistoryOrFail(string $idPerkara, string $idHistoryReg): array
+    {
+        $this->findRegistrasiOrFail($idPerkara);
+
+        $row = $this->perkara->db->table('history_registrasi')
+            ->where('ID_HISTORY_REG', $idHistoryReg)
+            ->where('ID_PERKARA', $idPerkara)
+            ->where('IS_DELETE', 0)
+            ->get()
+            ->getRowArray();
+
+        if ($row === null) {
+            throw PageNotFoundException::forPageNotFound(
+                "History {$idHistoryReg} not found for perkara {$idPerkara}.",
+            );
+        }
+
+        return $this->presentHistoryDetail($row);
+    }
+
+    /**
+     * @param array<string, mixed> $r
+     * @return array<string, mixed>
+     */
+    protected function presentHistorySummary(array $r): array
+    {
+        return [
+            'id_history_reg' => $r['ID_HISTORY_REG'] ?? null,
+            'id_perkara'     => $r['ID_PERKARA'] ?? null,
+            'nomor_induk'    => $r['NOMOR_INDUK'] ?? null,
+            'id_upt'         => $r['ID_UPT'] ?? null,
+            'id_reg'         => $r['ID_REG'] ?? null,
+            'id_status'      => $r['ID_STATUS'] ?? null,
+            'id_sub_status'  => $r['ID_SUB_STATUS'] ?? null,
+            'is_tahanan'     => isset($r['IS_TAHANAN']) ? (int) $r['IS_TAHANAN'] : null,
+            'nmr_reg_gol'    => $r['NMR_REG_GOL'] ?? null,
+            'tgl_msk_lapas'  => $r['TGL_MSK_LAPAS'] ?? null,
+            'tgl_ekspirasi'  => $r['TGL_EKSPIRASI'] ?? null,
+            'tgl_entry'      => $r['TGL_ENTRY'] ?? null,
+            'keterangan'     => $r['KETERANGAN'] ?? null,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $r
+     * @return array<string, mixed>
+     */
+    protected function presentHistoryDetail(array $r): array
+    {
+        return [
+            'id_history_reg'            => $r['ID_HISTORY_REG'] ?? null,
+            'id_perkara'                => $r['ID_PERKARA'] ?? null,
+            'id_perkara_parent'         => $r['ID_PERKARA_PARENT'] ?? null,
+            'nomor_induk'               => $r['NOMOR_INDUK'] ?? null,
+            'id_upt'                    => $r['ID_UPT'] ?? null,
+            'id_reg'                    => $r['ID_REG'] ?? null,
+            'id_status'                 => $r['ID_STATUS'] ?? null,
+            'id_sub_status'             => $r['ID_SUB_STATUS'] ?? null,
+            'is_tahanan'                => isset($r['IS_TAHANAN']) ? (int) $r['IS_TAHANAN'] : null,
+            'nmr_reg_gol'               => $r['NMR_REG_GOL'] ?? null,
+            'nmr_reg_instansi'          => $r['NMR_REG_INSTANSI'] ?? null,
+            'tgl_msk_lapas'             => $r['TGL_MSK_LAPAS'] ?? null,
+            'tgl_ekspirasi'             => $r['TGL_EKSPIRASI'] ?? null,
+            'tgl_ekspirasi_awal'        => $r['TGL_EKSPIRASI_AWAL'] ?? null,
+            'tgl_pertama_ditahan'       => $r['TGL_PERTAMA_DITAHAN'] ?? null,
+            'tgl_akhir_ditahan'         => $r['TGL_AKHIR_DITAHAN'] ?? null,
+            'id_instansi_penyidik'      => $r['ID_INSTANSI_PENYIDIK'] ?? null,
+            'id_instansi_penyidik_lain' => $r['ID_INSTANSI_PENYIDIK_LAIN'] ?? null,
+            'keterangan'                => $r['KETERANGAN'] ?? null,
+            'lokasi_sel'                => $r['LOKASI_SEL'] ?? null,
+            'lokasi_dokumen'            => $r['LOKASI_DOKUMEN'] ?? null,
+            'tahun_hukuman'             => $r['TAHUN_HUKUMAN'] ?? null,
+            'bulan_hukuman'             => $r['BULAN_HUKUMAN'] ?? null,
+            'hari_hukuman'              => $r['HARI_HUKUMAN'] ?? null,
+            'tgl_entry'                 => $r['TGL_ENTRY'] ?? null,
+            'tgl_mg'                    => $r['TGL_MG'] ?? null,
+            'is_delete'                 => isset($r['IS_DELETE']) ? (int) $r['IS_DELETE'] : null,
+        ];
     }
 
     /**

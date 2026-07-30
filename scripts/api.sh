@@ -445,6 +445,184 @@ cmd_registrasi_update() {
     -d "$body"
 }
 
+# R5 history under registrasi
+cmd_history_list() {
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 history-list <ID_PERKARA>" >&2
+    exit 1
+  fi
+  auth_headers
+  local id
+  id="$(urlencode "$1")"
+  echo "GET ${BASE_URL}/api/v1/wbp/registrasi/${id}/history  (X-Org-Id: ${ORG_ID})" >&2
+  request GET "${BASE_URL}/api/v1/wbp/registrasi/${id}/history?perPage=50" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+cmd_history_show() {
+  if [[ -z "${1:-}" || -z "${2:-}" ]]; then
+    echo "Usage: $0 history-show <ID_PERKARA> <ID_HISTORY_REG>" >&2
+    exit 1
+  fi
+  auth_headers
+  local pid hid
+  pid="$(urlencode "$1")"
+  hid="$(urlencode "$2")"
+  echo "GET ${BASE_URL}/api/v1/wbp/registrasi/${pid}/history/${hid}" >&2
+  request GET "${BASE_URL}/api/v1/wbp/registrasi/${pid}/history/${hid}" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+cmd_history_create() {
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 history-create <ID_PERKARA> [keterangan]" >&2
+    echo "  Or: BODY='{…}' $0 history-create <ID_PERKARA>" >&2
+    exit 1
+  fi
+  auth_headers
+  local pid body
+  pid="$(urlencode "$1")"
+  if [[ -n "${BODY:-}" ]]; then
+    body="$BODY"
+  else
+    local ket="${2:-API R5 append}"
+    body="$(printf '{"keterangan":"%s"}' "$ket")"
+  fi
+  echo "POST ${BASE_URL}/api/v1/wbp/registrasi/${pid}/history" >&2
+  request POST "${BASE_URL}/api/v1/wbp/registrasi/${pid}/history" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+cmd_history_update() {
+  if [[ -z "${1:-}" || -z "${2:-}" ]]; then
+    echo "Usage: $0 history-update <ID_PERKARA> <ID_HISTORY_REG> [keterangan]" >&2
+    echo "  Or: BODY='{…}' $0 history-update <ID_PERKARA> <ID_HISTORY_REG>" >&2
+    exit 1
+  fi
+  auth_headers
+  local pid hid body
+  pid="$(urlencode "$1")"
+  hid="$(urlencode "$2")"
+  if [[ -n "${BODY:-}" ]]; then
+    body="$BODY"
+  else
+    local ket="${3:-Updated via api.sh R5}"
+    body="$(printf '{"keterangan":"%s"}' "$ket")"
+  fi
+  echo "PUT ${BASE_URL}/api/v1/wbp/registrasi/${pid}/history/${hid}" >&2
+  request PUT "${BASE_URL}/api/v1/wbp/registrasi/${pid}/history/${hid}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
+cmd_history_delete() {
+  if [[ -z "${1:-}" || -z "${2:-}" ]]; then
+    echo "Usage: $0 history-delete <ID_PERKARA> <ID_HISTORY_REG>" >&2
+    exit 1
+  fi
+  auth_headers
+  local pid hid
+  pid="$(urlencode "$1")"
+  hid="$(urlencode "$2")"
+  echo "DELETE ${BASE_URL}/api/v1/wbp/registrasi/${pid}/history/${hid}" >&2
+  request DELETE "${BASE_URL}/api/v1/wbp/registrasi/${pid}/history/${hid}" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+# M1 mutasi golongan
+cmd_mutasi_options() {
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 mutasi-options <ID_PERKARA>" >&2
+    exit 1
+  fi
+  auth_headers
+  local id
+  id="$(urlencode "$1")"
+  echo "GET ${BASE_URL}/api/v1/mutasi/golongan/options?id_perkara=${id}" >&2
+  request GET "${BASE_URL}/api/v1/mutasi/golongan/options?id_perkara=${id}" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+cmd_mutasi_list() {
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 mutasi-list <ID_PERKARA>" >&2
+    exit 1
+  fi
+  auth_headers
+  local id
+  id="$(urlencode "$1")"
+  echo "GET ${BASE_URL}/api/v1/mutasi/golongan?id_perkara=${id}" >&2
+  request GET "${BASE_URL}/api/v1/mutasi/golongan?id_perkara=${id}&perPage=50" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+cmd_mutasi_show() {
+  if [[ -z "${1:-}" ]]; then
+    echo "Usage: $0 mutasi-show <ID_MUTASI_TAHANAN>" >&2
+    exit 1
+  fi
+  auth_headers
+  local id
+  id="$(urlencode "$1")"
+  echo "GET ${BASE_URL}/api/v1/mutasi/golongan/${id}" >&2
+  request GET "${BASE_URL}/api/v1/mutasi/golongan/${id}" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}"
+}
+
+# Usage: mutasi-golongan <ID_PERKARA> <ID_REG_AKHIR>
+#    or: BODY='{…}' $0 mutasi-golongan
+cmd_mutasi_golongan() {
+  auth_headers
+  local body
+  if [[ -n "${BODY:-}" ]]; then
+    body="$BODY"
+  else
+    if [[ -z "${1:-}" || -z "${2:-}" ]]; then
+      echo "Usage: $0 mutasi-golongan <ID_PERKARA> <ID_REG_AKHIR>" >&2
+      echo "  Or: BODY='{\"id_perkara\":\"…\",\"id_reg_akhir\":\"BIII\"}' $0 mutasi-golongan" >&2
+      exit 1
+    fi
+    body="$(cat <<EOF
+{
+  "id_perkara": "$1",
+  "id_reg_akhir": "$2",
+  "nmr_srt_mg": "API/1",
+  "tgl_srt_mg": "$(date +%Y-%m-%d)",
+  "tgl_efektif": "$(date +%Y-%m-%d)",
+  "nmr_reg_gol": "$2.API/$(date +%Y)",
+  "keterangan": "API M1 mutasi"
+}
+EOF
+)"
+  fi
+  echo "POST ${BASE_URL}/api/v1/mutasi/golongan  (X-Org-Id: ${ORG_ID})" >&2
+  request POST "${BASE_URL}/api/v1/mutasi/golongan" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "X-Org-Id: ${ORG_ID}" \
+    -d "$body"
+}
+
 # Aliases for old names
 cmd_inmates() { cmd_wbp "$@"; }
 cmd_inmate() {
@@ -581,6 +759,15 @@ R1/R2 Wbp (legacy identitas):
   registrasi-list [search]            R6 list active perkara
   registrasi-show <ID_PERKARA>        R6 show detail
   registrasi-update <ID_PERKARA> […]  R4 edit (or BODY=json)
+  history-list <ID_PERKARA>           R5 list history
+  history-show <ID_PERKARA> <ID_HISTORY_REG>
+  history-create <ID_PERKARA> […]     R5 append snapshot
+  history-update <ID_PERKARA> <ID_HISTORY_REG> […]
+  history-delete <ID_PERKARA> <ID_HISTORY_REG>
+  mutasi-options <ID_PERKARA>         M1 allowed target golongan
+  mutasi-list <ID_PERKARA>            M1 list mutasi for perkara
+  mutasi-show <ID_MUTASI_TAHANAN>
+  mutasi-golongan <ID_PERKARA> <ID_REG_AKHIR>   M1 create (or BODY=)
   inmates / inmate …            Aliases for wbp / wbp-show
 
 R0 Referensi:
@@ -631,6 +818,15 @@ main() {
     registrasi-list|reg-list) cmd_registrasi_list "$@" ;;
     registrasi-show|reg-show) cmd_registrasi_show "$@" ;;
     registrasi-update|reg-update) cmd_registrasi_update "$@" ;;
+    history-list|hist-list) cmd_history_list "$@" ;;
+    history-show|hist-show) cmd_history_show "$@" ;;
+    history-create|hist-create) cmd_history_create "$@" ;;
+    history-update|hist-update) cmd_history_update "$@" ;;
+    history-delete|hist-delete) cmd_history_delete "$@" ;;
+    mutasi-options|mutasi-opts) cmd_mutasi_options "$@" ;;
+    mutasi-list)      cmd_mutasi_list "$@" ;;
+    mutasi-show)      cmd_mutasi_show "$@" ;;
+    mutasi-golongan|mutasi) cmd_mutasi_golongan "$@" ;;
     inmates)          cmd_inmates "$@" ;;
     inmate)           cmd_inmate "$@" ;;
     referensi|ref)    cmd_referensi "$@" ;;
