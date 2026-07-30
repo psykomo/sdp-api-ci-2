@@ -1,13 +1,12 @@
 #--------------------------------------------------------------------
-# Example Environment Configuration file
+# Example Environment Configuration file (upstream CI4 template)
 #
-# This file can be used as a starting point for your own
-# custom .env files, and contains most of the possible settings
-# available in a default install.
+# For local sdp-api-ci-2 + shared db_sdp setup, prefer:
+#   cp .env.example .env
+# (.env.example has ready-to-use MariaDB / baseURL defaults.)
 #
-# By default, all of the settings are commented out. If you want
-# to override the setting, you must un-comment it by removing the '#'
-# at the beginning of the line.
+# This file lists most framework settings commented out. Un-comment
+# a line (remove '#') to override when using this as a base.
 #--------------------------------------------------------------------
 
 #--------------------------------------------------------------------

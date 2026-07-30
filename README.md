@@ -23,10 +23,48 @@ When updating, check the release notes to see if there are any changes you might
 to your `app` folder. The affected files can be copied or merged from
 `vendor/codeigniter4/framework/app`.
 
-## Setup
+## Setup (sdp-api-ci-2 local)
 
-Copy `env` to `.env` and tailor for your app, specifically the baseURL
-and any database settings.
+This API is intended to share the **legacy MariaDB** schema with CI2 (`db_sdp`),
+not a greenfield empty database.
+
+```bash
+# 1. Dependencies
+composer install
+
+# 2. Environment (copy the example — .env is gitignored)
+cp .env.example .env
+# Edit app.baseURL / DB credentials if your ports differ
+
+# 3. Shared MariaDB (sibling 102sdp stack — OrbStack/Docker)
+#    See ../102sdp/docs/LOCAL_DEV_DB.md
+#    Host: 127.0.0.1:3307  DB: db_sdp  user: sdp / sdp_local
+cd ../102sdp
+docker compose -f docker-compose.mariadb.yml up -d
+./scripts/restore-db.sh    # first time
+cd ../sdp-api-ci-2
+
+# 4. App-only seed data (users / RBAC) — do NOT blindly migrate all greenfield
+#    tables onto db_sdp. Prefer team-documented migrate/seed steps, then:
+# php spark db:seed RbacSeeder
+# php spark db:seed DemoAuthSeeder
+
+# 5. Run API + smoke
+php spark serve --host 127.0.0.1 --port 8082
+./scripts/api.sh login
+ORG_ID=<unit-org-id> ./scripts/api.sh wbp
+php spark legacy:smoke-r01 --registrasi
+```
+
+**Env files**
+
+| File | Purpose |
+|------|---------|
+| **`.env.example`** | Ready-to-copy local defaults for shared `db_sdp` (commit this) |
+| **`.env`** | Your machine-only config (never commit) |
+| **`env`** | Upstream CI4 full commented template |
+
+Migration notes: `docs/MIGRATION_STRATEGY.md`, `docs/migration/`.
 
 ## Important Change with index.php
 
