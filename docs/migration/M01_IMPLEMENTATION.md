@@ -75,5 +75,6 @@ php spark legacy:smoke-r01 --registrasi   # includes M1 after R5
 
 ## Next
 
-- **M2** mutasi UPT (`mutasi_upt*`) after M1 + R3/R4 stable  
-- Optional: richer mutasi form fields / field-level audit  
+M1 spine complete. Recommended epic next: **L2 proxy** (legacy UI → this API) and/or **M2** mutasi UPT.  
+
+See [PROGRESS.md](./PROGRESS.md).

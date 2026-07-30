@@ -4,13 +4,14 @@
 |-------|--------|
 | **Document** | SDP Legacy → CI4 Modular API Migration Strategy |
 | **Author** | _TBD_ |
-| **Date** | 2026-07-29 |
-| **Status** | Draft (rev 3 — shared DB + legacy→API strangler) |
+| **Date** | 2026-07-29 (progress refresh 2026-07-30) |
+| **Status** | Draft (rev 3.1 — shared DB + legacy→API strangler; API spine R0–R5 + M1) |
 | **Audience** | Senior engineers, tech leads, product owners (Ditjenpas / SDP program) |
 | **Source (legacy)** | **Canonical:** `/Users/hap/Documents/dev/sdp/102sdp` — focus `sdp/` + `system/` (CI **2.1.3**, Git `staging` @ 2026-07-28). **DB dump:** `102sdp/db_sdp_new_30072026.sql` (MariaDB `db_sdp`, ~454 tables). Older UPT dump `HTDOCS SDP` is reference-only. |
 | **Target (new)** | `/Users/hap/Documents/dev/sdp/sdp-api-ci-2` — CodeIgniter 4 modular IMS API |
 | **House style** | [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) (modules, thin controllers, services) — **data layer adapted for shared legacy schema** |
 | **Module names** | Indonesian — [`docs/MODULE_NAMING.md`](./MODULE_NAMING.md) (`Wbp`, `Kunjungan`, `Mutasi`, …) |
+| **Progress (API)** | [`docs/migration/PROGRESS.md`](./migration/PROGRESS.md) |
 | **Supersedes** | rev 2 greenfield-schema + ETL + shadow/cutover-as-primary plan |
 
 ---
@@ -300,6 +301,30 @@ Canonical process map (controllers → R-slices → tables → API drafts):
 Schema / PK / column contract for pilot tables:
 
 **[`docs/migration/SCHEMA_CONTRACT.md`](./migration/SCHEMA_CONTRACT.md)** — from OrbStack `db_sdp`.
+
+**Living progress (slices done vs open):**
+
+**[`docs/migration/PROGRESS.md`](./migration/PROGRESS.md)**.
+
+### Progress snapshot (2026-07-30)
+
+API work on shared `db_sdp` (branch `feat/wbp-registrasi-r0-r5-m1`), **spine quality** — not full legacy form parity:
+
+| Area | State |
+|------|--------|
+| R0–R2 | Done (referensi reads; identitas R/W) |
+| R3–R5 | Done spine (registrasi create/edit; history R/W) |
+| R6 | Basic list/show with R4 |
+| R7 | Not started (optional admin) |
+| R8 | Waived for pilot |
+| M1 mutasi golongan | Done spine (`POST /api/v1/mutasi/golongan`, options/list) |
+| M2 mutasi UPT | Not started |
+| **L2 legacy→API proxy** | **Not started** (required for epic DoD) |
+| Local setup | `.env.example` + README; smoke `php spark legacy:smoke-r01 --registrasi` |
+
+**Still open for pilot DoD:** L2 proxies for registrasi + M1; richer MAP/keputusan/ekspirasi as production needs; feature tests beyond smoke; M2 when capacity allows.
+
+**Near-term recommended next:** L2 proxy **or** M2 (product choice) — not R6 polish / R7 unless blocked.
 
 ### Goal
 

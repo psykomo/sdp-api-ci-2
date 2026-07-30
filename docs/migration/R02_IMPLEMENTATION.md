@@ -46,4 +46,4 @@ ORG_ID=<id for code 093> ./scripts/api.sh wbp-create "Nama Uji"
 
 ## Next
 
-**R3** — `POST /api/v1/wbp/registrasi` multi-table command (perkara + history + kejahatan + hukuman).
+R2 complete. **R3** (done): [R03_IMPLEMENTATION.md](./R03_IMPLEMENTATION.md). Epic progress: [PROGRESS.md](./PROGRESS.md).

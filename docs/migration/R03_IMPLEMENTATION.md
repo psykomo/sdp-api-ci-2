@@ -77,7 +77,6 @@ php spark legacy:smoke-r01 --registrasi
 
 ## Next
 
-- **R4** edit registrasi — see [R04_IMPLEMENTATION.md](./R04_IMPLEMENTATION.md)
-- **R5** history write parity  
-- **M1** mutasi golongan  
-- Expand R3 (keputusan levels, ekspirasi, MAP fields) as needed  
+R3 spine complete. Follow-ups already landed: [R04](./R04_IMPLEMENTATION.md), [R05](./R05_IMPLEMENTATION.md), [M01](./M01_IMPLEMENTATION.md).  
+
+Still open for R3 **depth** (not blocking spine): keputusan levels, ekspirasi engine, full MAP fields. Epic progress: [PROGRESS.md](./PROGRESS.md).

@@ -64,7 +64,7 @@ php spark legacy:smoke-r01 --registrasi
 | **`.env`** | Your machine-only config (never commit) |
 | **`env`** | Upstream CI4 full commented template |
 
-Migration notes: `docs/MIGRATION_STRATEGY.md`, `docs/migration/`.
+Migration notes: `docs/MIGRATION_STRATEGY.md`, `docs/migration/` (start with [`docs/migration/PROGRESS.md`](docs/migration/PROGRESS.md)).
 
 ## Important Change with index.php
 

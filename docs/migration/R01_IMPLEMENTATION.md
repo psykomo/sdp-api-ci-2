@@ -27,7 +27,7 @@
 
 Org scope: `organizations.code` treated as legacy **`ID_UPT`** for unit orgs. Kanwil (`type=kanwil`) has no UPT filter.
 
-Writes (`POST/PUT/DELETE /wbp`) return domain “not implemented” until R2.
+Writes: see [R02](./R02_IMPLEMENTATION.md) (identitas) and later R3+ notes.
 
 ## Models (legacy tables)
 
@@ -56,3 +56,7 @@ php spark serve
 - R0 Agama lookups: 7  
 - R1 list: 6 identitas; UPT `093` scoped list: 5  
 - R1 show: includes perkara summary  
+
+## Next
+
+R0/R1 complete. Epic progress: [PROGRESS.md](./PROGRESS.md).

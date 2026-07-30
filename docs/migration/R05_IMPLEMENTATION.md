@@ -68,5 +68,6 @@ php spark legacy:smoke-r01 --registrasi
 
 ## Next
 
-- **M1** mutasi golongan — see [M01_IMPLEMENTATION.md](./M01_IMPLEMENTATION.md)
-- R6 polish / R7 jenis_registrasi master as needed
+R5 complete. **M1** done: [M01_IMPLEMENTATION.md](./M01_IMPLEMENTATION.md).  
+
+Epic remaining: L2 proxy, M2, optional R6/R7 — [PROGRESS.md](./PROGRESS.md).

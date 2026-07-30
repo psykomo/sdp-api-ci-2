@@ -61,6 +61,6 @@ php spark legacy:smoke-r01 --registrasi
 
 ## Next
 
-- **R5** history registrasi — see [R05_IMPLEMENTATION.md](./R05_IMPLEMENTATION.md)
-- **M1** mutasi golongan (`POST /api/v1/mutasi/golongan`) — not part of PUT registrasi
-- R6 polish (richer joins / filters) as needed for ManajemenRegistrasi UI cutover
+R4 + basic R6 complete. **R5** / **M1** done: [R05](./R05_IMPLEMENTATION.md), [M01](./M01_IMPLEMENTATION.md).  
+
+Optional later: R6 polish (identitas joins, filters). Epic progress: [PROGRESS.md](./PROGRESS.md).

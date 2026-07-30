@@ -2,13 +2,14 @@
 
 | Field | Value |
 |-------|--------|
-| **Date** | 2026-07-30 |
+| **Date** | 2026-07-30 (progress refresh same day) |
 | **Code** | `/Users/hap/Documents/dev/sdp/102sdp` (`staging`) — `system/application` |
 | **DB** | OrbStack `sdp-mariadb` → `db_sdp` @ `127.0.0.1:3307` (dump `db_sdp_new_30072026.sql`) |
 | **Goal** | Map legacy entrypoints → R-slices → tables → target API (Wbp/Perkara/Referensi) |
 | **Strategy** | [`docs/MIGRATION_STRATEGY.md`](../MIGRATION_STRATEGY.md) epic “Wbp/registrasi full L2” |
+| **Progress** | [`PROGRESS.md`](./PROGRESS.md) — live slice checklist |
 
-This inventory is the **gate before** rebasing CI4 models or implementing L2 proxies.
+This inventory was the **gate before** models/API work. Implementation status is tracked in **PROGRESS.md** (and per-slice `R0x` / `M01` notes).
 
 ---
 
@@ -219,18 +220,20 @@ When implementing L2, add switches per slice (not one global):
 
 ## 9. Implementation order (post-inventory)
 
-| Step | Work | Depends |
-|------|------|---------|
-| 1 | This inventory signed / adjusted (out-of-scope list) | — |
-| 2 | ~~Schema contract~~ → [`SCHEMA_CONTRACT.md`](./SCHEMA_CONTRACT.md) | Live `db_sdp` |
-| 3 | CI4 models R0–R1 + GET APIs | Step 2 |
-| 4 | R2 identitas write + tests | Step 3 |
-| 5 | R3 RegistrasiBaru + **RegistrasiMAP variant** + characterization fixtures | Steps 2–4 |
-| 6 | **M1 MutasiGolongan** + L2 from registrasi UI | Steps 3–5 (parallel R4 OK) |
-| 7 | R4 edit + **R5 history write (parity with R4)** + R6 list | Step 5 |
-| 8 | R7 as needed; L2 proxies for Wbp + M1 | Steps 4–7 |
-| 9 | Epic pilot DoD (R0–R7 as scoped, M1; **no R8, no Portir, no sidik cascade**) | Steps 5–8 |
-| 10 | **M2 Mutasi UPT** (follows M1 + R3/R4) | After pilot DoD or as capacity allows |
+| Step | Work | Status (2026-07-30) | Depends |
+|------|------|---------------------|---------|
+| 1 | This inventory signed / adjusted (out-of-scope list) | **Done** | — |
+| 2 | Schema contract → [`SCHEMA_CONTRACT.md`](./SCHEMA_CONTRACT.md) | **Done** | Live `db_sdp` |
+| 3 | CI4 models R0–R1 + GET APIs | **Done** | Step 2 |
+| 4 | R2 identitas write (+ smoke) | **Done** | Step 3 |
+| 5 | R3 RegistrasiBaru spine (+ MAP flag; full MAP/fixtures later) | **Done (spine)** | Steps 2–4 |
+| 6 | **M1 MutasiGolongan** API | **Done (spine)**; **L2 from registrasi UI still open** | Steps 3–5 |
+| 7 | R4 edit + **R5 history** + basic R6 list/show | **Done (spine)** | Step 5 |
+| 8 | R7 as needed; **L2 proxies** for Wbp + M1 | **Open** (R7 optional) | Steps 4–7 |
+| 9 | Epic pilot DoD (proxied UPT paths; R8 waived; no Portir/sidik cascade) | **Open** | Steps 5–8 |
+| 10 | **M2 Mutasi UPT** (follows M1 + R3/R4) | **Open** | After pilot DoD or as capacity allows |
+
+Living checklist: [`PROGRESS.md`](./PROGRESS.md).
 
 ---
 
